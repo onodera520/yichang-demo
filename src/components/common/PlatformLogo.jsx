@@ -1,58 +1,85 @@
 import React from 'react';
+import amazonLogo from '../../assets/platform-logos/amazon.svg';
+import ebayLogo from '../../assets/platform-logos/ebay.svg';
+import shopeeLogo from '../../assets/platform-logos/shopee.svg';
+import shopifyLogo from '../../assets/platform-logos/shopify.svg';
+import tiktokShopLogo from '../../assets/platform-logos/tiktok-shop.svg';
 
-const platformStyles = {
+const platformLogos = {
   Amazon: {
-    className: 'bg-[#111827] text-white',
-    mark: 'a',
+    src: amazonLogo,
     label: 'Amazon',
-    accent: '#F59E0B',
+    wide: false,
   },
   'TikTok Shop': {
-    className: 'bg-[#101010] text-white',
-    mark: 'T',
+    src: tiktokShopLogo,
     label: 'TikTok Shop',
-    accent: '#25F4EE',
+    wide: false,
   },
   Shopee: {
-    className: 'bg-[#EE4D2D] text-white',
-    mark: 'S',
+    src: shopeeLogo,
     label: 'Shopee',
-    accent: '#FFFFFF',
+    wide: false,
   },
   eBay: {
-    className: 'bg-white text-[#344767] border border-[#E6EAF2]',
-    mark: 'e',
+    src: ebayLogo,
     label: 'eBay',
-    accent: '#86B817',
+    wide: true,
   },
   Shopify: {
-    className: 'bg-[#EAF8F0] text-[#1F7A3A]',
-    mark: 'S',
+    src: shopifyLogo,
     label: 'Shopify',
-    accent: '#95BF47',
+    wide: false,
+  },
+};
+
+const sizeStyles = {
+  sm: {
+    wrapper: 'h-7',
+    icon: 'h-6 w-6',
+    wideIcon: 'h-6 w-12',
+    fallback: 'h-6 w-6 text-[11px]',
+  },
+  md: {
+    wrapper: 'h-8',
+    icon: 'h-7 w-7',
+    wideIcon: 'h-7 w-14',
+    fallback: 'h-7 w-7 text-xs',
+  },
+  lg: {
+    wrapper: 'h-10',
+    icon: 'h-9 w-9',
+    wideIcon: 'h-9 w-[72px]',
+    fallback: 'h-9 w-9 text-sm',
   },
 };
 
 export default function PlatformLogo({ platform, showName = true, size = 'md', className = '' }) {
-  const config = platformStyles[platform] ?? {
-    className: 'bg-[#F2F6FC] text-[#344767]',
-    mark: platform?.slice(0, 1) ?? '?',
-    label: platform ?? 'Unknown',
-    accent: '#2F7BFF',
-  };
-  const dimensions = size === 'sm' ? 'h-7' : 'h-8';
-  const markSize = size === 'sm' ? 'h-5 w-5 text-[11px]' : 'h-6 w-6 text-xs';
+  const config = platformLogos[platform];
+  const styles = sizeStyles[size] ?? sizeStyles.md;
+
+  if (!config) {
+    return (
+      <span className={`inline-flex ${styles.wrapper} items-center gap-2 rounded-[9px] border border-[#E6EAF2] bg-[#F2F6FC] px-2.5 text-[#344767] ${className}`}>
+        <span className={`flex ${styles.fallback} items-center justify-center rounded-md bg-white font-bold`}>
+          {platform?.slice(0, 1) ?? '?'}
+        </span>
+        {showName ? <span className="text-xs font-medium">{platform ?? 'Unknown'}</span> : null}
+      </span>
+    );
+  }
+
+  const iconSize = config.wide ? styles.wideIcon : styles.icon;
 
   return (
-    <span className={`inline-flex ${dimensions} items-center gap-2 rounded-[9px] px-2.5 ${config.className} ${className}`}>
-      <span className={`relative flex ${markSize} items-center justify-center rounded-md bg-white/18 font-bold`}>
-        {config.mark}
-        <span
-          className="absolute -bottom-0.5 h-1 w-3 rounded-full"
-          style={{ backgroundColor: config.accent }}
-        />
-      </span>
-      {showName ? <span className="text-xs font-medium">{config.label}</span> : null}
+    <span className={`inline-flex ${styles.wrapper} items-center gap-2 rounded-[9px] px-1.5 ${className}`}>
+      <img
+        alt={`${config.label} logo`}
+        className={`${iconSize} shrink-0 object-contain`}
+        draggable="false"
+        src={config.src}
+      />
+      {showName ? <span className="text-xs font-medium text-[#1D273B]">{config.label}</span> : null}
     </span>
   );
 }

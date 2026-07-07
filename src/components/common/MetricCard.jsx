@@ -21,7 +21,7 @@ function Sparkline({ points = defaultTrend, tone = '#2F7BFF' }) {
   const gradientId = `metric-gradient-${String(tone).replace(/[^a-zA-Z0-9]/g, '')}`;
 
   return (
-    <svg className="h-12 w-full" viewBox={`0 0 ${width} ${height}`} role="img" aria-label="趋势折线">
+    <svg className="h-10 w-full" viewBox={`0 0 ${width} ${height}`} role="img" aria-label="趋势折线">
       <defs>
         <linearGradient id={gradientId} x1="0" x2="0" y1="0" y2="1">
           <stop offset="0%" stopColor={tone} stopOpacity="0.2" />
@@ -45,24 +45,24 @@ export default function MetricCard({
   icon,
 }) {
   return (
-    <article className="panel overflow-hidden p-4">
+    <article className="panel relative h-[150px] overflow-hidden px-6 py-5">
       <div className="flex items-start justify-between">
         <div>
-          <div className="text-[13px] font-medium text-[#7889A8]">{title}</div>
-          <div className="mt-2 text-[28px] font-semibold leading-none text-[#1D273B]">{value}</div>
-          <div className="mt-2 text-xs text-[#8A98B3]">{change}</div>
+          <div className="text-[16px] font-semibold text-[#1D273B]">{title}</div>
+          <div className="mt-3 text-[30px] font-semibold leading-none text-black">{value}</div>
+          <div className="mt-3 text-sm text-[#5F6B7A]">{change}</div>
         </div>
-        <div className="flex h-10 w-10 items-center justify-center rounded-[12px] bg-[#F1F6FF]">
+        <div className="flex h-10 w-10 items-center justify-center rounded-[11px] bg-gradient-to-br from-[#EAF2FF] to-[#CFE1FF] text-[#2F7BFF] shadow-[0_8px_16px_rgba(47,123,255,0.16)]">
           {icon ?? <span className="h-5 w-5 rounded bg-[#D7E6FF]" />}
         </div>
       </div>
 
-      <div className="mt-3">
+      <div className="absolute bottom-3 left-6 right-6">
         <Sparkline points={trend} tone={tone} />
       </div>
 
       <button
-        className="mt-2 flex items-center gap-1 text-xs font-medium text-[#2F7BFF]"
+        className="absolute right-6 top-[78px] flex items-center gap-1 text-sm font-medium text-[#2F7BFF]"
         onClick={onDetail}
         type="button"
       >

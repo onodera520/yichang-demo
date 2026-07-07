@@ -8,21 +8,24 @@ import Inventory from './pages/Inventory.jsx';
 import Orders from './pages/Orders.jsx';
 import Settings from './pages/Settings.jsx';
 import Tasks from './pages/Tasks.jsx';
+import { DemoStateProvider } from './state/DemoStateContext.jsx';
 
 export default function App() {
   return (
     <ToastProvider>
-      <Routes>
-        <Route element={<AppLayout />}>
-          <Route index element={<Navigate to="/dashboard" replace />} />
-          <Route path="/dashboard" element={<Dashboard />} />
-          <Route path="/orders" element={<Orders />} />
-          <Route path="/inventory" element={<Inventory />} />
-          <Route path="/tasks" element={<Tasks />} />
-          <Route path="/analytics" element={<Analytics />} />
-          <Route path="/settings" element={<Settings />} />
-        </Route>
-      </Routes>
+      <DemoStateProvider>
+        <Routes>
+          <Route element={<AppLayout />}>
+            <Route index element={<Navigate to="/dashboard" replace />} />
+            <Route path="/dashboard" element={<Dashboard />} />
+            <Route path="/orders" element={<Orders />} />
+            <Route path="/inventory" element={<Inventory />} />
+            <Route path="/tasks" element={<Tasks />} />
+            <Route path="/analytics" element={<Analytics />} />
+            <Route path="/settings" element={<Settings />} />
+          </Route>
+        </Routes>
+      </DemoStateProvider>
     </ToastProvider>
   );
 }

@@ -7,14 +7,14 @@
   --color-brand-soft: #eaf2ff;
   --color-surface: #f5f7fb;
   --color-card: #ffffff;
-  --color-border: #e6eaf2;
+  --color-border: #e3e9f3;
   --color-text: #1d273b;
   --color-text-muted: #7889a8;
   --color-text-subtle: #a1adc2;
   --radius-card: 14px;
-  --radius-control: 10px;
-  --shadow-card: 0 1px 2px rgba(16, 24, 40, 0.05);
-  --shadow-drawer: -16px 0 36px rgba(16, 24, 40, 0.16);
+  --radius-control: 8px;
+  --shadow-card: 0 8px 26px rgba(28, 39, 71, 0.055);
+  --shadow-drawer: -22px 0 42px rgba(16, 24, 40, 0.18);
   --shadow-toast: 0 14px 34px rgba(16, 24, 40, 0.16);
   --sidebar-width: 180px;
   --topbar-height: 64px;
@@ -36,6 +36,28 @@ body {
     "Microsoft YaHei", sans-serif;
 }
 
+::selection {
+  background: rgba(47, 123, 255, 0.18);
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: #c8d2e1;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #aeb9c9;
+}
+
 button,
 input,
 select {
@@ -49,4 +71,199 @@ select {
     background: var(--color-card);
     box-shadow: var(--shadow-card);
   }
+
+  .visual-card {
+    border-radius: var(--radius-card);
+    border: 1px solid var(--color-border);
+    background: #fff;
+    box-shadow: var(--shadow-card);
+  }
+
+  .btn-primary {
+    border-radius: 8px;
+    background: var(--color-brand);
+    color: #fff;
+    box-shadow: 0 8px 18px rgba(47, 123, 255, 0.22);
+  }
+
+  .btn-secondary {
+    border-radius: 8px;
+    border: 1px solid #d7dee9;
+    background: #fff;
+    color: #263246;
+    box-shadow: 0 2px 8px rgba(28, 39, 71, 0.035);
+  }
+}
+
+.orders-page {
+  min-height: calc(100vh - 104px);
+}
+
+.orders-tabs {
+  column-gap: 56px;
+}
+
+.orders-tab {
+  height: 42px;
+  margin-right: 0 !important;
+  font-size: 16px;
+  line-height: 42px;
+}
+
+.orders-filter-panel {
+  padding: 13px 16px 11px;
+}
+
+.orders-filter-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 38px;
+}
+
+.orders-filter {
+  flex: 0 0 132px;
+}
+
+.orders-filter-wide {
+  flex-basis: 146px;
+}
+
+.orders-filter-label {
+  display: block;
+  margin-bottom: 8px;
+  color: #7889a8;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.orders-filter-select {
+  height: 44px;
+  width: 100%;
+  appearance: none;
+  border-radius: 7px;
+  border: 1px solid #d7dee9;
+  background: #fff;
+  padding: 0 38px 0 14px;
+  color: #263246;
+  font-size: 15px;
+  font-weight: 600;
+  outline: none;
+}
+
+.orders-filter-select:hover,
+.orders-filter-select:focus {
+  border-color: #b9c4d4;
+}
+
+.orders-more-filter {
+  height: 44px;
+  min-width: 112px;
+  border-radius: 7px;
+  border: 1px solid #d7dee9;
+  background: #fff;
+  padding: 0 18px;
+  color: #263246;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.orders-table-card {
+  min-height: 785px;
+  overflow: hidden;
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: var(--shadow-card);
+}
+
+.orders-table-shell {
+  height: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  border: 1px solid #e6eaf2;
+  border-radius: 14px;
+  background: #fff;
+}
+
+.orders-table {
+  min-width: 100%;
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: collapse;
+  text-align: left;
+}
+
+.orders-table thead {
+  color: #6f7f98;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.orders-table th {
+  height: 52px;
+  padding: 0 14px;
+  border-bottom: 1px solid #e3e9f3;
+  background: #fff;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+.orders-row {
+  border-bottom: 1px solid #e3e9f3;
+  transition: background-color 0.16s ease;
+}
+
+.orders-row:hover {
+  background: #f7faff;
+}
+
+.orders-row td {
+  height: 60px;
+  padding: 0 14px;
+  color: #1d273b;
+  font-size: 15px;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+main button {
+  transition:
+    background-color 0.16s ease,
+    border-color 0.16s ease,
+    box-shadow 0.16s ease,
+    color 0.16s ease,
+    transform 0.16s ease;
+}
+
+main button:active {
+  transform: translateY(0.5px);
+}
+
+.orders-row td:first-child,
+.orders-table th:first-child {
+  padding-left: 16px;
+  padding-right: 10px;
+}
+
+.orders-row-selected {
+  background: #eaf2ff;
+}
+
+.orders-order-link {
+  color: #2f7bff;
+  font-size: 15px;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.orders-pagination {
+  display: flex;
+  height: 78px;
+  min-width: 100%;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  background: #fff;
+  color: #5f6b7a;
+  font-size: 15px;
 }

@@ -1,4 +1,4 @@
-export const orders = [
+const seedOrders = [
   {
     id: 'order-001',
     orderNo: 'AMZ-US-240613-0188',
@@ -205,7 +205,115 @@ export const orders = [
   },
 ];
 
-export const inventory = [
+const orderPlatforms = ['Amazon', 'TikTok Shop', 'Shopee', 'eBay'];
+const orderCountries = ['美国', '英国', '德国', '日本', '加拿大', '澳大利亚', '法国', '西班牙', '意大利', '墨西哥'];
+const orderStores = ['US-旗舰店', 'UK-品牌店', 'DE-生活馆', 'JP-旗舰店', 'CA-旗舰店', 'AU-轻奢店', 'FR-家居店', 'ES-数码店'];
+const orderTypes = ['缺货', '物流延误', '地址异常', '平台同步失败', '支付异常', '退款', '清关异常', '发票异常'];
+const orderOwners = ['王敏', '赵宁', '陈浩', '未分派', '刘畅', '张磊', '李娜', '周扬'];
+const orderStatuses = ['待处理', '处理中', '待分派', '已完成', '已驳回'];
+const orderSkuPool = ['ELE-HEAD-01', 'CAR-VAC-01', 'ACC-PHONE-01', 'HOM-HUM-03', 'OUT-WB-01', 'ELE-KYB-01', 'PET-FEED-02', 'KID-LAMP-05'];
+const countryCodes = { 美国: 'US', 英国: 'UK', 德国: 'DE', 日本: 'JP', 加拿大: 'CA', 澳大利亚: 'AU', 法国: 'FR', 西班牙: 'ES', 意大利: 'IT', 墨西哥: 'MX' };
+
+function pad(value, size = 3) {
+  return String(value).padStart(size, '0');
+}
+
+function buildSla(index) {
+  const hours = (index * 3) % 18;
+  const minutes = (index * 17) % 60;
+  const seconds = (index * 11) % 60;
+  return `${pad(hours, 2)}:${pad(minutes, 2)}:${pad(seconds, 2)}`;
+}
+
+function orderSuggestion(type, warehouse, count) {
+  const map = {
+    缺货: `建议切换至 ${warehouse} 仓发货，并同步采购补货 ${count} 件，避免订单超时取消。`,
+    物流延误: '建议更换物流渠道并同步客服安抚话术，优先处理超过 48 小时未更新轨迹的包裹。',
+    地址异常: '建议触发地址校正规则并发送买家确认消息，避免派送失败。',
+    平台同步失败: '建议重试平台回写接口，并记录 ERP 与平台状态差异。',
+    支付异常: '建议重新拉取支付流水并锁定异常订单，避免重复发货。',
+    退款: '建议复核退款原因与物流轨迹，确认是否需要客服介入。',
+    清关异常: '建议补充报关资料并提前预约清关窗口，降低退运风险。',
+    发票异常: '建议重新生成发票并同步税务字段，避免平台审核失败。',
+  };
+  return map[type] ?? map.缺货;
+}
+
+function createOrder(index) {
+  const type = orderTypes[index % orderTypes.length];
+  const platform = orderPlatforms[index % orderPlatforms.length];
+  const country = orderCountries[index % orderCountries.length];
+  const store = orderStores[index % orderStores.length];
+  const owner = orderOwners[index % orderOwners.length];
+  const riskLevel = index % 9 === 0 ? '高' : index % 3 === 0 ? '中' : index % 4 === 0 ? '低' : index % 5 === 0 ? '高' : '中';
+  const amount = 420 + ((index * 317) % 7200);
+  const warehouse = ['NJ', 'LA', 'TX', 'UK', 'DE'][index % 5];
+  const relatedSku = orderSkuPool[index % orderSkuPool.length];
+  const orderNo = `${platform === 'Amazon' ? 'AMZ' : platform === 'TikTok Shop' ? 'TTS' : platform === 'Shopee' ? 'SHP' : 'EBY'}-${countryCodes[country] ?? 'US'}-2406${pad((index % 18) + 10, 2)}-${pad(index + 1, 4)}`;
+
+  return {
+    id: `order-${pad(index + 1)}`,
+    orderNo,
+    riskLevel,
+    abnormalType: type,
+    store,
+    platform,
+    country,
+    amount,
+    remainingSLA: buildSla(index),
+    owner,
+    status: orderStatuses[index % orderStatuses.length],
+    aiSuggestion: orderSuggestion(type, warehouse, 80 + (index % 9) * 20),
+    confidence: Number((0.68 + (index % 25) / 100).toFixed(2)),
+    impact: `影响 ${2 + (index % 9)} 笔订单，预计挽回金额 ¥${amount.toLocaleString('zh-CN')}`,
+    relatedSku,
+    detail: {
+      createdAt: `2026-06-${pad((index % 28) + 1, 2)} ${pad(8 + (index % 10), 2)}:${pad((index * 7) % 60, 2)}:${pad((index * 13) % 60, 2)}`,
+      receiver: ['John Smith', 'Emma Wilson', '佐藤健一', 'Mia Brown', 'Lucas Martin', 'Sofia Garcia'][index % 6],
+      country,
+      store,
+      orderAmount: amount + 160 + (index % 8) * 35,
+      owner,
+      reason: `${type}触发规则命中，系统检测到 ${store} / ${platform} 存在履约风险。`,
+      skuName: ['头戴式无线降噪耳机Pro', '便携式车载无线吸尘器', '手机桌面支架', '桌面加湿器', '运动保温水杯', '机械键盘'][index % 6],
+      skuCode: relatedSku,
+      availableStock: (index * 5) % 42,
+      inTransitStock: (index * 11) % 80,
+      aiTitle: type === '缺货' ? `建议切换至 ${warehouse} 仓发货` : `建议处理${type}`,
+      aiDescription: orderSuggestion(type, warehouse, 80 + (index % 9) * 20),
+      beforeRisk: riskLevel,
+      afterRisk: riskLevel === '高' ? '低' : riskLevel === '中' ? '低' : riskLevel,
+    },
+  };
+}
+
+function enrichOrder(order, index) {
+  if (order.detail) return order;
+  return {
+    ...order,
+    detail: {
+      createdAt: `2026-06-01 ${pad(8 + (index % 4), 2)}:${pad((index * 9) % 60, 2)}:${pad((index * 17) % 60, 2)}`,
+      receiver: ['John Smith', 'Emma Wilson', 'Michael Lee', 'Sakura Tanaka'][index % 4],
+      country: order.country,
+      store: order.store,
+      orderAmount: order.amount,
+      owner: order.owner,
+      reason: order.aiSuggestion,
+      skuName: ['头戴式无线降噪耳机Pro', '便携式车载无线吸尘器', '手机桌面支架', '桌面加湿器'][index % 4],
+      skuCode: order.relatedSku,
+      availableStock: (index * 7) % 38,
+      inTransitStock: (index * 13) % 76,
+      aiTitle: order.abnormalType === '缺货' ? '建议切换至 NJ 仓发货' : `建议处理${order.abnormalType}`,
+      aiDescription: order.aiSuggestion,
+      beforeRisk: order.riskLevel,
+      afterRisk: order.riskLevel === '高' ? '低' : order.riskLevel,
+    },
+  };
+}
+
+export const orders = [...seedOrders, ...Array.from({ length: 128 - seedOrders.length }, (_, index) => createOrder(index + seedOrders.length))].map(enrichOrder);
+
+const seedInventory = [
   {
     sku: 'ELE-HEAD-01',
     productName: '头戴式无线降噪耳机Pro',
@@ -348,7 +456,79 @@ export const inventory = [
   },
 ];
 
-export const tasks = [
+const inventoryPlatforms = ['Amazon', 'TikTok Shop', 'Shopee', 'eBay', 'Shopify'];
+const inventoryWarehouses = ['LA', 'NJ', 'TX', 'UK', 'DE', 'JP', 'CA'];
+const inventoryRiskLevels = ['高', '中', '低', '滞销', '调拨'];
+const inventoryNames = ['头戴式无线降噪耳机Pro', '便携式车载无线吸尘器', '可折叠手机桌面支架', '桌面静音加湿器', '运动保温水杯', '机械键盘黑轴', '智能宠物喂食器', '儿童护眼台灯'];
+
+function buildSalesTrend(index, base) {
+  return Array.from({ length: 7 }, (_, day) => ({
+    date: `5.${26 + day}`,
+    sales: Math.max(2, base + ((index + day * 3) % 9) - 3),
+  }));
+}
+
+function createInventoryItem(index) {
+  const platform = inventoryPlatforms[index % inventoryPlatforms.length];
+  const warehouse = inventoryWarehouses[index % inventoryWarehouses.length];
+  const riskLevel = inventoryRiskLevels[index % inventoryRiskLevels.length];
+  const dailySales = 4 + (index % 26);
+  const currentStock = riskLevel === '高' ? index % 18 : 18 + ((index * 7) % 260);
+  const inTransitStock = riskLevel === '滞销' ? 0 : (index * 11) % 180;
+  const availableDays = riskLevel === '滞销' ? 96 + (index % 80) : Math.max(1, Math.round(currentStock / dailySales));
+  const suggestedReplenishment = riskLevel === '滞销' ? 0 : 80 + (index % 12) * 25;
+  const sku = `${['ELE', 'CAR', 'ACC', 'HOM', 'OUT', 'PET', 'KID', 'KIT'][index % 8]}-${platform.replace(/\s/g, '').slice(0, 3).toUpperCase()}-${pad(index + 1, 3)}`;
+  const productName = inventoryNames[index % inventoryNames.length];
+
+  return {
+    sku,
+    productName,
+    platform,
+    warehouse,
+    currentStock,
+    inTransitStock,
+    dailySales,
+    availableDays,
+    riskLevel,
+    aiSuggestion:
+      riskLevel === '滞销'
+        ? '建议下调补货优先级，转入活动清仓或组合销售。'
+        : riskLevel === '调拨'
+          ? `建议从 ${inventoryWarehouses[(index + 2) % inventoryWarehouses.length]} 仓调拨至 ${warehouse} 仓。`
+          : `建议补货 ${suggestedReplenishment} 件至 ${warehouse} 仓，覆盖安全库存周期。`,
+    confidence: Number((0.7 + (index % 24) / 100).toFixed(2)),
+    suggestedReplenishment,
+    status: riskLevel === '高' ? '待处理' : riskLevel === '调拨' ? '待调拨' : '待复核',
+    detail: {
+      displayName: productName,
+      warehouseName: `${warehouse}仓`,
+      salesTrend: buildSalesTrend(index, dailySales),
+      suggestionReason:
+        riskLevel === '滞销'
+          ? '近 14 天销量低于安全阈值，建议控制补货并加入清仓活动。'
+          : `结合日均销量 ${dailySales} 件、可售 ${availableDays} 天与在途库存 ${inTransitStock} 件，建议优先处理。`,
+      processStatus: riskLevel === '高' ? '待补货确认' : riskLevel === '调拨' ? '待调拨确认' : '待人工复核',
+    },
+  };
+}
+
+function enrichInventory(item, index) {
+  if (item.detail) return item;
+  return {
+    ...item,
+    detail: {
+      displayName: item.productName,
+      warehouseName: `${item.warehouse}仓`,
+      salesTrend: buildSalesTrend(index, item.dailySales),
+      suggestionReason: item.aiSuggestion || `建议补货 ${item.suggestedReplenishment || 120} 件，平衡库存与缺货风险。`,
+      processStatus: item.status || '待处理',
+    },
+  };
+}
+
+export const inventory = [...seedInventory, ...Array.from({ length: 125 - seedInventory.length }, (_, index) => createInventoryItem(index + seedInventory.length))].map(enrichInventory);
+
+const seedTasks = [
   {
     id: 'task-001',
     title: '切换至 NJ 仓发货',
@@ -496,6 +676,46 @@ export const tasks = [
     ],
   },
 ];
+
+const taskStatuses = ['待分派', '已分派', '处理中', '待确认', '已完成', '已超时', '已升级'];
+const taskSources = ['来源订单', '库存风险', '物流异常', '平台同步', '售后异常'];
+const taskTitles = ['切换发货仓库', '补货风险处理', '物流延误跟进', '平台同步修复', '退款复核确认', '清关资料补充', '发票信息重开', '库存数据校准'];
+
+function createTask(index) {
+  const sourceType = taskSources[index % taskSources.length];
+  const riskLevel = index % 6 === 0 ? '高' : index % 3 === 0 ? '中' : '低';
+  const status = taskStatuses[index % taskStatuses.length];
+  const owner = orderOwners[index % orderOwners.length];
+  const source = sourceType === '库存风险' ? orderSkuPool[index % orderSkuPool.length] : orders[index % orders.length].orderNo;
+  const title = taskTitles[index % taskTitles.length];
+  const remainingSLA = status === '已完成' ? '-' : buildSla(index + 4);
+
+  return {
+    id: `task-${pad(index + 1)}`,
+    title,
+    source,
+    sourceType,
+    riskLevel,
+    owner,
+    status,
+    remainingSLA,
+    deadline: index % 4 === 0 ? '今天 18:00' : index % 4 === 1 ? '今天 14:30' : index % 4 === 2 ? '明天 10:00' : '24小时内',
+    createdAt: index < 16 ? `今天 ${pad(7 + (index % 8), 2)}:${pad((index * 6) % 60, 2)}` : `06-${pad((index % 18) + 1, 2)} ${pad(9 + (index % 8), 2)}:${pad((index * 5) % 60, 2)}`,
+    description: `${sourceType}触发 ${title}，需要负责人确认处理路径并回写处理结果。`,
+    impact: `预计影响 ${2 + (index % 12)} 个对象，关联金额 ¥${(600 + (index * 281) % 9000).toLocaleString('zh-CN')}`,
+    processLogs: [
+      { time: '今天 09:00', owner: '系统', action: '创建任务', detail: `${sourceType}规则触发`, tone: 'blue' },
+      { time: '今天 09:12', owner, action: status === '待分派' ? '等待分派' : '接收任务', detail: `负责人 ${owner} 已进入处理队列`, tone: 'green' },
+      ...(status === '已完成'
+        ? [{ time: '今天 10:20', owner, action: '完成任务', detail: '处理结果已同步至异常对象', tone: 'green' }]
+        : status === '已升级'
+          ? [{ time: '今天 10:16', owner, action: '升级主管', detail: '需要主管确认后继续处理', tone: 'red' }]
+          : []),
+    ],
+  };
+}
+
+export const tasks = [...seedTasks, ...Array.from({ length: 89 - seedTasks.length }, (_, index) => createTask(index + seedTasks.length))];
 
 export const analytics = {
   overviewMetrics: [

@@ -4,7 +4,7 @@ export const designTokens = {
     brandSoft: '#EAF2FF',
     surface: '#F5F7FB',
     card: '#FFFFFF',
-    border: '#E6EAF2',
+    border: '#E3E9F3',
     text: '#1D273B',
     textMuted: '#7889A8',
     textSubtle: '#A1ADC2',
@@ -15,12 +15,12 @@ export const designTokens = {
   },
   radius: {
     card: '14px',
-    control: '10px',
+    control: '8px',
     pill: '999px',
   },
   shadow: {
-    card: '0 1px 2px rgba(16, 24, 40, 0.05)',
-    drawer: '-16px 0 36px rgba(16, 24, 40, 0.16)',
+    card: '0 8px 26px rgba(28, 39, 71, 0.055)',
+    drawer: '-22px 0 42px rgba(16, 24, 40, 0.18)',
     toast: '0 14px 34px rgba(16, 24, 40, 0.16)',
   },
   layout: {

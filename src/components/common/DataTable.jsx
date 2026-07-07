@@ -40,19 +40,19 @@ export default function DataTable({
   };
 
   return (
-    <div className="overflow-hidden rounded-[14px] border border-[#E6EAF2] bg-white">
+    <div className="overflow-hidden rounded-[14px] border border-[#E3E9F3] bg-white shadow-[var(--shadow-card)]">
       <table className="w-full border-collapse text-left">
-        <thead className="bg-[#F8FAFD]">
+        <thead className="bg-[#FAFBFD]">
           <tr>
-            <th className="w-12 px-4 py-3">
+            <th className="h-[52px] w-12 px-4 py-0">
               <input checked={allChecked} onChange={toggleAll} type="checkbox" />
             </th>
             {columns.map((column) => (
-              <th key={column.key} className="px-4 py-3 text-xs font-semibold text-[#7889A8]">
+              <th key={column.key} className="h-[52px] px-4 py-0 text-sm font-semibold text-[#6F7F98]">
                 {column.title}
               </th>
             ))}
-            {rowActions ? <th className="px-4 py-3 text-xs font-semibold text-[#7889A8]">操作</th> : null}
+            {rowActions ? <th className="h-[52px] px-4 py-0 text-sm font-semibold text-[#6F7F98]">操作</th> : null}
           </tr>
         </thead>
         <tbody>
@@ -62,20 +62,20 @@ export default function DataTable({
             return (
               <tr
                 key={key}
-                className={`border-t border-[#EEF2F7] transition hover:bg-[#F8FBFF] ${
-                  checked ? 'bg-[#EEF6FF]' : 'bg-white'
+                className={`border-t border-[#E3E9F3] transition hover:bg-[#F7FAFF] ${
+                  checked ? 'bg-[#EAF2FF]' : 'bg-white'
                 }`}
               >
-                <td className="px-4 py-3">
+                <td className="h-[60px] px-4 py-0">
                   <input checked={checked} onChange={() => toggleRow(key)} type="checkbox" />
                 </td>
                 {columns.map((column) => (
-                  <td key={column.key} className="px-4 py-3 text-sm text-[#344767]">
+                  <td key={column.key} className="h-[60px] px-4 py-0 text-[15px] text-[#263246]">
                     {column.render ? column.render(row[column.dataIndex], row) : row[column.dataIndex]}
                   </td>
                 ))}
                 {rowActions ? (
-                  <td className="px-4 py-3 text-sm">
+                  <td className="h-[60px] px-4 py-0 text-[15px]">
                     <div className="flex items-center gap-3 text-[#2F7BFF]">{rowActions(row)}</div>
                   </td>
                 ) : null}
@@ -85,13 +85,13 @@ export default function DataTable({
         </tbody>
       </table>
 
-      <div className="flex h-12 items-center justify-between border-t border-[#E6EAF2] px-4 text-xs text-[#7889A8]">
+      <div className="flex h-14 items-center justify-between border-t border-[#E3E9F3] px-5 text-sm text-[#7889A8]">
         <span>
           共 {total} 条，当前第 {page} 页
         </span>
         <div className="flex items-center gap-2">
           <button
-            className="h-7 rounded-[8px] border border-[#E2E8F0] px-3 disabled:cursor-not-allowed disabled:opacity-45"
+            className="h-8 rounded-[8px] border border-[#D7DEE9] bg-white px-3 disabled:cursor-not-allowed disabled:opacity-45"
             disabled={page <= 1}
             onClick={() => pagination?.onPageChange?.(page - 1)}
             type="button"
@@ -99,7 +99,7 @@ export default function DataTable({
             上一页
           </button>
           <button
-            className="h-7 rounded-[8px] border border-[#E2E8F0] px-3 disabled:cursor-not-allowed disabled:opacity-45"
+            className="h-8 rounded-[8px] border border-[#D7DEE9] bg-white px-3 disabled:cursor-not-allowed disabled:opacity-45"
             disabled={page * pageSize >= total}
             onClick={() => pagination?.onPageChange?.(page + 1)}
             type="button"
