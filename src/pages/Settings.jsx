@@ -30,6 +30,17 @@ const notificationRows = [
   { key: 'systemMessage', title: '系统消息', description: '站内消息提醒' },
 ];
 
+const connectedStores = [
+  ...settings.storeSyncStatus,
+  { storeName: 'Shopee-SG', platform: 'Shopee', region: '新加坡', syncStatus: '成功', lastSyncAt: '2026-06-01 09:08:25' },
+  { storeName: 'Shopee-MY', platform: 'Shopee', region: '马来西亚', syncStatus: '成功', lastSyncAt: '2026-06-01 09:05:48' },
+  { storeName: 'Amazon-JP', platform: 'Amazon', region: '日本', syncStatus: '成功', lastSyncAt: '2026-06-01 09:02:36' },
+  { storeName: 'TikTok Shop-TH', platform: 'TikTok Shop', region: '泰国', syncStatus: '延迟', lastSyncAt: '2026-06-01 08:58:12' },
+  { storeName: 'Shopify-US', platform: 'Shopify', region: '美国', syncStatus: '成功', lastSyncAt: '2026-06-01 08:55:09' },
+];
+
+const STORE_PAGE_SIZE = 5;
+
 function SettingsCard({ title, action, children, className = '' }) {
   return (
     <section className={`overflow-hidden rounded-[14px] border border-[#E3E9F3] bg-white shadow-[var(--shadow-card)] ${className}`}>
@@ -122,7 +133,12 @@ export default function Settings() {
     systemMessage: settings.notificationSettings.systemMessage,
   });
   const [showConnectModal, setShowConnectModal] = useState(false);
-  const stores = useMemo(() => settings.storeSyncStatus.slice(0, 7), []);
+  const [storePage, setStorePage] = useState(1);
+  const totalStorePages = Math.ceil(connectedStores.length / STORE_PAGE_SIZE);
+  const pagedStores = useMemo(
+    () => connectedStores.slice((storePage - 1) * STORE_PAGE_SIZE, storePage * STORE_PAGE_SIZE),
+    [storePage],
+  );
 
   const authorizeShopify = () => {
     setConnections((current) =>
@@ -138,9 +154,9 @@ export default function Settings() {
   };
 
   return (
-    <div className="flex h-[calc(100vh-104px)] min-h-[720px] flex-col gap-4 overflow-hidden">
-      <div className="flex shrink-0 items-center justify-between">
-        <h1 className="text-[24px] font-semibold tracking-[-0.01em] text-[#111827]">系统设置</h1>
+    <div className="flex h-[calc(100vh-104px)] min-h-[720px] flex-col gap-4">
+      <div className="page-header flex shrink-0 items-center justify-between">
+        <h1 className="page-title">系统设置</h1>
         <button
           className="flex h-10 items-center gap-2 rounded-[8px] bg-[#2F7BFF] px-5 text-sm font-medium text-white shadow-[0_8px_16px_rgba(47,123,255,0.22)]"
           onClick={() => showToast({ message: '设置已保存' })}
@@ -152,7 +168,7 @@ export default function Settings() {
       </div>
 
       <div className="flex min-h-0 flex-1 gap-4">
-        <div className="grid min-h-0 min-w-0 grid-rows-[400px_1fr] gap-4" style={{ flex: '0 0 62%' }}>
+        <div className="grid min-h-0 min-w-0 grid-rows-[346px_1fr] gap-4" style={{ flex: '0 0 62%' }}>
           <SettingsCard
             title="平台连接"
             action={
@@ -205,9 +221,10 @@ export default function Settings() {
                 刷新数据
               </button>
             }
-            className="min-h-0"
+            className="flex min-h-0 flex-col"
           >
-            <div className="min-h-0 overflow-hidden">
+            <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+              <div className="min-h-0 flex-1 overflow-hidden">
               <table className="w-full text-left">
                 <thead className="bg-[#FAFBFD] text-sm font-semibold text-[#6F7F98]">
                   <tr>
@@ -220,8 +237,8 @@ export default function Settings() {
                   </tr>
                 </thead>
                 <tbody className="text-sm text-[#263246]">
-                  {stores.map((store) => (
-                    <tr className="h-[52px] border-t border-[#E3E9F3]" key={`${store.storeName}-${store.platform}`}>
+                  {pagedStores.map((store) => (
+                    <tr className="h-[66px] border-t border-[#E3E9F3]" key={`${store.storeName}-${store.platform}`}>
                       <td className="px-5 font-medium">{store.storeName}</td>
                       <td className="px-4"><PlatformLogo platform={store.platform} showName={false} size="sm" /></td>
                       <td className="px-4">{store.region}</td>
@@ -242,18 +259,41 @@ export default function Settings() {
                   ))}
                 </tbody>
               </table>
-              <div className="flex items-center justify-end gap-5 border-t border-[#E3E9F3] px-5 py-3 text-sm text-[#7889A8]">
-                <span>共 12 条</span>
-                <button className="text-[#8A98B3]" type="button">‹</button>
-                <button className="h-8 w-8 rounded-[8px] bg-[#2F7BFF] text-white" type="button">1</button>
-                <button className="h-8 w-8 rounded-[8px] text-[#5F6B7A]" type="button">2</button>
-                <button className="text-[#1D273B]" type="button">›</button>
+              </div>
+              <div className="flex shrink-0 items-center justify-end gap-4 border-t border-[#E3E9F3] px-5 py-3 text-sm text-[#7889A8]">
+                <span>共 {connectedStores.length} 条</span>
+                <button
+                  className={storePage === 1 ? 'text-[#C6CFDD]' : 'text-[#1D273B]'}
+                  disabled={storePage === 1}
+                  onClick={() => setStorePage((page) => Math.max(1, page - 1))}
+                  type="button"
+                >
+                  ‹
+                </button>
+                {Array.from({ length: totalStorePages }, (_, index) => index + 1).map((page) => (
+                  <button
+                    className={`h-8 w-8 rounded-[8px] ${storePage === page ? 'bg-[#2F7BFF] text-white' : 'text-[#5F6B7A]'}`}
+                    key={page}
+                    onClick={() => setStorePage(page)}
+                    type="button"
+                  >
+                    {page}
+                  </button>
+                ))}
+                <button
+                  className={storePage === totalStorePages ? 'text-[#C6CFDD]' : 'text-[#1D273B]'}
+                  disabled={storePage === totalStorePages}
+                  onClick={() => setStorePage((page) => Math.min(totalStorePages, page + 1))}
+                  type="button"
+                >
+                  ›
+                </button>
               </div>
             </div>
           </SettingsCard>
         </div>
 
-        <div className="grid min-h-0 min-w-0 flex-1 grid-rows-[270px_1fr_1fr] gap-4">
+        <div className="grid min-h-0 min-w-0 flex-1 gap-4" style={{ gridTemplateRows: '330px minmax(0, 1fr) 190px' }}>
           <SettingsCard title="SLA规则" action={<button className="text-sm font-medium text-[#2F7BFF]" onClick={() => showActionToast('编辑')} type="button">编辑</button>}>
             <table className="w-full text-left">
               <thead className="bg-[#FAFBFD] text-sm font-semibold text-[#6F7F98]">
@@ -266,7 +306,7 @@ export default function Settings() {
               </thead>
               <tbody className="text-sm text-[#263246]">
                 {slaRules.map((rule) => (
-                  <tr className="h-[52px] border-t border-[#E3E9F3]" key={rule.rule}>
+                  <tr className="h-[46px] border-t border-[#E3E9F3]" key={rule.rule}>
                     <td className="px-5">{rule.rule}</td>
                     <td className="px-3">{rule.threshold}</td>
                     <td className="px-3"><span className={`inline-flex min-w-[52px] justify-center rounded-[8px] px-3 py-1 text-sm font-medium ${severityClasses(rule.severity)}`}>{rule.severity}</span></td>
@@ -292,7 +332,7 @@ export default function Settings() {
           </SettingsCard>
 
           <SettingsCard title="通知设置" action={<button className="text-sm font-medium text-[#2F7BFF]" onClick={() => showActionToast('编辑')} type="button">编辑</button>}>
-            <div className="space-y-6 px-5 pb-5">
+            <div className="space-y-1 px-5 pb-6">
               {notificationRows.map((item) => (
                 <div className="flex items-center justify-between gap-5" key={item.key}>
                   <div>

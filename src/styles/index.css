@@ -65,6 +65,18 @@ select {
 }
 
 @layer components {
+  .page-header {
+    margin-top: -8px;
+  }
+
+  .page-title {
+    color: #111827;
+    font-size: 24px;
+    font-weight: 600;
+    letter-spacing: 0;
+    line-height: 32px;
+  }
+
   .panel {
     border-radius: var(--radius-card);
     border: 1px solid var(--color-border);
@@ -136,25 +148,6 @@ select {
   font-weight: 500;
 }
 
-.orders-filter-select {
-  height: 44px;
-  width: 100%;
-  appearance: none;
-  border-radius: 7px;
-  border: 1px solid #d7dee9;
-  background: #fff;
-  padding: 0 38px 0 14px;
-  color: #263246;
-  font-size: 15px;
-  font-weight: 600;
-  outline: none;
-}
-
-.orders-filter-select:hover,
-.orders-filter-select:focus {
-  border-color: #b9c4d4;
-}
-
 .orders-more-filter {
   height: 44px;
   min-width: 112px;
@@ -194,7 +187,7 @@ select {
 
 .orders-table thead {
   color: #6f7f98;
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 700;
 }
 
@@ -209,6 +202,7 @@ select {
 
 .orders-row {
   border-bottom: 1px solid #e3e9f3;
+  cursor: pointer;
   transition: background-color 0.16s ease;
 }
 
@@ -220,7 +214,7 @@ select {
   height: 60px;
   padding: 0 14px;
   color: #1d273b;
-  font-size: 15px;
+  font-size: 14px;
   vertical-align: middle;
   white-space: nowrap;
 }
@@ -248,9 +242,15 @@ main button:active {
   background: #eaf2ff;
 }
 
+.orders-row-active,
+.orders-row-active:hover {
+  background: #dceaff;
+  box-shadow: inset 3px 0 0 #2f7bff;
+}
+
 .orders-order-link {
   color: #2f7bff;
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 600;
   text-decoration: underline;
   text-underline-offset: 3px;

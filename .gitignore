@@ -26,6 +26,7 @@ node_modules/.vite/
 # Runtime / verification artifacts
 dev-server.*.log
 *-verification*.png
+/*.png
 
 # OS and editor files
 .DS_Store
@@ -37,3 +38,5 @@ desktop.ini
 # Codex local working metadata
 .agents/
 .codex/
+
+.vercel

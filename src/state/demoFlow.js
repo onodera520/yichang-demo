@@ -58,6 +58,40 @@ export function buildInventoryTask(sku, options = {}) {
   };
 }
 
+export function buildSuggestionTask(suggestion, context = {}) {
+  const sourceKind = suggestion.sourceKind || context.sourceKind || 'order';
+  const sourceId = suggestion.sourceId || context.sourceId || suggestion.source;
+  const source = suggestion.source || context.source || sourceId;
+  const confidence = suggestion.confidence ?? context.confidence;
+  const confidenceText = typeof confidence === 'number' ? `，置信度 ${Math.round(confidence * 100)}%` : '';
+
+  return {
+    id: `task-suggestion-${suggestion.id || sourceId}-${Date.now()}`,
+    title: suggestion.taskTitle || suggestion.title,
+    source,
+    sourceId,
+    sourceKind,
+    sourceType: suggestion.sourceType || context.sourceType || (sourceKind === 'inventory' ? '库存风险' : '来源订单'),
+    riskLevel: suggestion.riskLevel || context.riskLevel || '中',
+    owner: suggestion.owner || context.owner || '未分派',
+    status: suggestion.status || '待分派',
+    remainingSLA: suggestion.remainingSLA || context.remainingSLA || '04:00:00',
+    deadline: suggestion.deadline || context.deadline || '今天 18:00',
+    createdAt: nowLabel,
+    description: suggestion.taskDescription || suggestion.description || suggestion.title,
+    impact: `${suggestion.impact || context.impact || '待评估影响范围'}${confidenceText}`,
+    processLogs: [
+      {
+        time: nowLabel,
+        owner: 'AI',
+        action: '生成任务',
+        detail: `来自今日建议 - ${suggestion.title}`,
+        tone: 'blue',
+      },
+    ],
+  };
+}
+
 export function completeTaskState(state, taskId) {
   const targetTask = state.tasks.find((task) => task.id === taskId);
   if (!targetTask) return state;

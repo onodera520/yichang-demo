@@ -1,0 +1,12 @@
+node_modules
+dist
+.vercel
+.agents
+.codex
+
+*.log
+/*.png
+/*.docx
+
+docs
+reference

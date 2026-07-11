@@ -1,15 +1,5 @@
 ﻿import React, { useMemo, useState } from 'react';
-import {
-  AlertTriangle,
-  CheckCircle2,
-  ChevronRight,
-  Clock3,
-  Download,
-  RefreshCw,
-  Sparkles,
-  Target,
-  TimerReset,
-} from 'lucide-react';
+import { Download, RefreshCw } from 'lucide-react';
 import {
   Bar,
   BarChart,
@@ -23,17 +13,26 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
+import FilterSelect from '../components/common/FilterSelect.jsx';
 import PlatformLogo from '../components/common/PlatformLogo.jsx';
+import LiveUpdateTime from '../components/LiveUpdateTime.jsx';
 import { useToast } from '../components/common/Toast.jsx';
 import { analytics } from '../data/mockData.js';
+import { useRefreshTime } from '../hooks/useRefreshTime.js';
+import aiAdoptionRateIcon from '../assets/analytics-icons/ai-adoption-rate.png';
+import averageProcessingTimeIcon from '../assets/analytics-icons/average-processing-time.png';
+import cumulativeAnomaliesIcon from '../assets/analytics-icons/cumulative-anomalies.png';
+import processedAnomaliesIcon from '../assets/analytics-icons/processed-anomalies.png';
+import taskTimeoutRateIcon from '../assets/analytics-icons/task-timeout-rate.png';
+import warningAccuracyIcon from '../assets/analytics-icons/warning-accuracy.png';
 
 const metricConfig = [
-  { label: '累计异常数', value: '2,813', change: '+131', icon: AlertTriangle, tone: '#2F7BFF', trend: [42, 45, 39, 48, 43, 38, 46, 41, 49, 63, 44, 51, 42, 62] },
-  { label: '已处理异常', value: '2,487', change: '+211', icon: CheckCircle2, tone: '#2F7BFF', trend: [36, 40, 43, 35, 46, 42, 38, 48, 41, 37, 43, 39, 51, 64] },
-  { label: '平均处理时长', value: '37.2 分', change: '-2.1', icon: Clock3, tone: '#19CFA4', trend: [45, 47, 40, 52, 46, 41, 49, 43, 39, 48, 61, 45, 51, 44] },
-  { label: '任务超时率', value: '6.12%', change: '-0.14%', icon: TimerReset, tone: '#19CFA4', trend: [38, 42, 45, 36, 49, 44, 39, 46, 40, 37, 44, 58, 42, 47] },
-  { label: 'AI采纳率', value: '78.6%', change: '+6.4%', icon: Sparkles, tone: '#2F7BFF', trend: [41, 45, 48, 39, 51, 45, 39, 48, 42, 38, 45, 63, 43, 58] },
-  { label: '预警准确率', value: '92.4%', change: '+3.1%', icon: Target, tone: '#2F7BFF', trend: [39, 43, 46, 38, 50, 43, 38, 47, 41, 39, 48, 64, 44, 59] },
+  { label: '累计异常数', value: '2,813', change: '+131', icon: cumulativeAnomaliesIcon, tone: '#2F7BFF', trend: [42, 45, 39, 48, 43, 38, 46, 41, 49, 63, 44, 51, 42, 62] },
+  { label: '已处理异常', value: '2,487', change: '+211', icon: processedAnomaliesIcon, tone: '#2F7BFF', trend: [36, 40, 43, 35, 46, 42, 38, 48, 41, 37, 43, 39, 51, 64] },
+  { label: '平均处理时长', value: '37.2 分', change: '-2.1', icon: averageProcessingTimeIcon, tone: '#19CFA4', trend: [45, 47, 40, 52, 46, 41, 49, 43, 39, 48, 61, 45, 51, 44] },
+  { label: '任务超时率', value: '6.12%', change: '-0.14%', icon: taskTimeoutRateIcon, tone: '#19CFA4', trend: [38, 42, 45, 36, 49, 44, 39, 46, 40, 37, 44, 58, 42, 47] },
+  { label: 'AI采纳率', value: '78.6%', change: '+6.4%', icon: aiAdoptionRateIcon, tone: '#2F7BFF', trend: [41, 45, 48, 39, 51, 45, 39, 48, 42, 38, 45, 63, 43, 58] },
+  { label: '预警准确率', value: '92.4%', change: '+3.1%', icon: warningAccuracyIcon, tone: '#2F7BFF', trend: [39, 43, 46, 38, 50, 43, 38, 47, 41, 39, 48, 64, 44, 59] },
 ];
 
 const trendLines = [
@@ -178,55 +177,44 @@ function formatPercent(value) {
   return `${Number(value).toFixed(1)}%`;
 }
 
-function TimeSelect({ value, onChange, open, onToggle, options = timeOptions }) {
+function TimeSelect({ value, onChange, open, onOpenChange, options = timeOptions }) {
   return (
-    <div className="relative">
-      <button
-        className="flex h-8 min-w-[86px] items-center justify-between gap-3 rounded-[8px] border border-[#D7DEE9] bg-white px-3 text-sm text-[#344767] shadow-[0_2px_8px_rgba(28,39,71,0.04)]"
-        onClick={onToggle}
-        type="button"
-      >
-        {value}
-        <ChevronRight className={`h-4 w-4 transition-transform ${open ? 'rotate-90' : ''}`} />
-      </button>
-      {open ? (
-        <div className="absolute right-0 top-9 z-30 w-[104px] overflow-hidden rounded-[8px] border border-[#D7DEE9] bg-white py-1 shadow-[0_12px_28px_rgba(28,39,71,0.14)]">
-          {options.map((option) => (
-            <button
-              key={option}
-              className={`block h-8 w-full px-3 text-left text-sm hover:bg-[#F2F7FF] ${option === value ? 'font-medium text-[#2F7BFF]' : 'text-[#344767]'}`}
-              onClick={() => onChange(option)}
-              type="button"
-            >
-              {option}
-            </button>
-          ))}
-        </div>
-      ) : null}
-    </div>
+    <FilterSelect
+      value={value}
+      options={options}
+      includePlaceholder={false}
+      onChange={onChange}
+      open={open}
+      onOpenChange={onOpenChange}
+      ariaLabel="时间范围"
+      align="right"
+      controlClassName="min-w-[86px]"
+      triggerClassName="h-8 min-w-[86px] rounded-[8px] px-3 text-sm"
+      menuClassName="w-[104px]"
+      optionClassName="h-8 px-3 text-sm"
+    />
   );
 }
 
 function AnalyticsMetricCard({ item }) {
-  const Icon = item.icon;
   const isPositive = item.change.startsWith('+');
   const changeColor = isPositive ? 'text-[#2F7BFF]' : 'text-[#19CFA4]';
 
   return (
-    <article className="relative h-[126px] overflow-hidden rounded-[14px] border border-[#E6EAF2] bg-white px-4 py-3 shadow-[var(--shadow-card)]">
-      <div className="relative z-10 flex gap-3">
-        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[9px] bg-gradient-to-br from-[#EAF2FF] to-[#CFE1FF] text-[#2F7BFF] shadow-[0_6px_12px_rgba(47,123,255,0.18)]">
-          <Icon className="h-[18px] w-[18px]" />
-        </div>
-        <div className="min-w-0">
-          <div className="truncate text-[15px] font-semibold leading-5 text-[#1D273B]">{item.label}</div>
-          <div className="mt-2 whitespace-nowrap text-[29px] font-semibold leading-none tracking-tight text-black">{item.value}</div>
-          <div className="mt-2 flex items-center gap-2 text-xs">
-            <span className="text-[#5F6B7A]">较昨日</span>
-            <span className={changeColor}>
-              {item.change} {isPositive ? '↑' : '↓'}
-            </span>
+    <article className="relative h-[160px] overflow-hidden rounded-[14px] border border-[#E8ECF3] bg-white px-6 py-4 shadow-[0_8px_24px_rgba(28,39,71,0.06)]">
+      <div className="relative z-10">
+        <div className="flex items-center gap-3">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center">
+            <img src={item.icon} alt="" aria-hidden="true" className="h-10 w-10 object-contain" />
           </div>
+          <div className="whitespace-nowrap text-[17px] font-medium leading-6 text-[#111827]">{item.label}</div>
+        </div>
+        <div className="mt-0.5 whitespace-nowrap text-[30px] font-semibold leading-none tracking-tight text-black">{item.value}</div>
+        <div className="mt-2 flex items-center gap-2 text-[13px] leading-5">
+          <span className="text-[#5F6B7A]">较昨日</span>
+          <span className={changeColor}>
+            {item.change} {isPositive ? '↑' : '↓'}
+          </span>
         </div>
       </div>
       <Sparkline points={item.trend} color={item.tone} />
@@ -237,30 +225,34 @@ function AnalyticsMetricCard({ item }) {
 function Sparkline({ points, color }) {
   const width = 180;
   const height = 32;
+  const horizontalPadding = 3;
   const min = Math.min(...points);
   const max = Math.max(...points);
   const range = max - min || 1;
-  const step = width / (points.length - 1);
+  const step = (width - horizontalPadding * 2) / (points.length - 1);
   const coords = points.map((point, index) => {
-    const x = index * step;
+    const x = horizontalPadding + index * step;
     const y = height - ((point - min) / range) * 25 - 4;
     return [x, y];
   });
   const line = coords.map(([x, y], index) => `${index === 0 ? 'M' : 'L'}${x},${y}`).join(' ');
-  const area = `${line} L${width},${height} L0,${height} Z`;
+  const area = `${line} L${width - horizontalPadding},${height} L${horizontalPadding},${height} Z`;
   const id = `analytics-fill-${color.replace('#', '')}`;
 
   return (
-    <svg aria-hidden="true" className="pointer-events-none absolute bottom-[3px] left-3 right-3 h-8" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none">
-      <defs>
-        <linearGradient id={id} x1="0" x2="0" y1="0" y2="1">
-          <stop offset="0%" stopColor={color} stopOpacity="0.22" />
-          <stop offset="100%" stopColor={color} stopOpacity="0" />
-        </linearGradient>
-      </defs>
-      <path d={area} fill={`url(#${id})`} />
-      <path d={line} fill="none" stroke={color} strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.2" />
-    </svg>
+    <div className="pointer-events-none absolute bottom-4 left-6 right-6 h-6">
+      <svg aria-hidden="true" className="h-full w-full" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none">
+        <defs>
+          <linearGradient id={id} x1="0" x2="0" y1="0" y2="1">
+            <stop offset="0%" stopColor={color} stopOpacity="0.24" />
+            <stop offset="100%" stopColor={color} stopOpacity="0" />
+          </linearGradient>
+        </defs>
+        <path d={area} fill={`url(#${id})`} />
+        <path d={line} fill="none" stroke={color} strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.2" />
+        <circle cx={coords.at(-1)[0]} cy={coords.at(-1)[1]} r="2.5" fill="#fff" stroke={color} strokeWidth="2" />
+      </svg>
+    </div>
   );
 }
 
@@ -284,7 +276,7 @@ function TrendPanel({ range, open, setOpen, setRange }) {
   return (
     <Panel
       title="异常趋势"
-      action={<TimeSelect value={range} options={trendTimeOptions} open={open === 'trend'} onToggle={() => setOpen(open === 'trend' ? null : 'trend')} onChange={(value) => { setRange(value); setOpen(null); }} />}
+      action={<TimeSelect value={range} options={trendTimeOptions} open={open === 'trend'} onOpenChange={(nextOpen) => setOpen(nextOpen ? 'trend' : null)} onChange={(value) => { setRange(value); setOpen(null); }} />}
     >
       <div style={{ height: 203 }}>
         <ResponsiveContainer width="100%" height="100%">
@@ -310,22 +302,22 @@ function AiEffectPanel({ range, open, setOpen, setRange }) {
   return (
     <Panel
       title="AI建议处理效果"
-      action={<TimeSelect value={range} options={aiEffectTimeOptions} open={open === 'ai'} onToggle={() => setOpen(open === 'ai' ? null : 'ai')} onChange={(value) => { setRange(value); setOpen(null); }} />}
+      action={<TimeSelect value={range} options={aiEffectTimeOptions} open={open === 'ai'} onOpenChange={(nextOpen) => setOpen(nextOpen ? 'ai' : null)} onChange={(value) => { setRange(value); setOpen(null); }} />}
     >
       <div className="mb-1 flex items-center justify-center gap-5 text-sm text-[#344767]">
         <LegendItem color="#2F7BFF" label="采纳" />
         <LegendItem color="#4C8FF5" label="修改" />
         <LegendItem color="#7FB0FF" label="驳回" />
       </div>
-      <div style={{ height: 196 }}>
+      <div style={{ height: 182 }}>
         <ResponsiveContainer width="100%" height="100%">
-          <BarChart data={data} layout="vertical" margin={{ top: 0, right: 4, left: 8, bottom: 0 }} barGap={12}>
+          <BarChart data={data} layout="vertical" margin={{ top: 6, right: 4, left: 8, bottom: 10 }} barGap={8}>
             <XAxis type="number" domain={[0, 100]} hide />
             <YAxis type="category" dataKey="abnormalType" axisLine={false} tickLine={false} width={96} tick={{ fontSize: 13, fill: '#263246' }} />
             <Tooltip formatter={(value) => formatPercent(value)} contentStyle={{ borderRadius: 10, borderColor: '#D7DEE9' }} />
-            <Bar dataKey="adopted" name="采纳" stackId="effect" shape={renderPercentSegment('adopted', '#2F7BFF', 'left')} />
-            <Bar dataKey="modified" name="修改" stackId="effect" shape={renderPercentSegment('modified', '#4C8FF5')} />
-            <Bar dataKey="rejected" name="驳回" stackId="effect" shape={renderPercentSegment('rejected', '#7FB0FF', 'right')} />
+            <Bar dataKey="adopted" name="采纳" stackId="effect" barSize={26} shape={renderPercentSegment('adopted', '#2F7BFF', 'left')} />
+            <Bar dataKey="modified" name="修改" stackId="effect" barSize={26} shape={renderPercentSegment('modified', '#4C8FF5')} />
+            <Bar dataKey="rejected" name="驳回" stackId="effect" barSize={26} shape={renderPercentSegment('rejected', '#7FB0FF', 'right')} />
           </BarChart>
         </ResponsiveContainer>
       </div>
@@ -367,7 +359,7 @@ function EfficiencyPanel({ range, open, setOpen, setRange }) {
   return (
     <Panel
       title="处理效率分析"
-      action={<TimeSelect value={range} options={efficiencyTimeOptions} open={open === 'efficiency'} onToggle={() => setOpen(open === 'efficiency' ? null : 'efficiency')} onChange={(value) => { setRange(value); setOpen(null); }} />}
+      action={<TimeSelect value={range} options={efficiencyTimeOptions} open={open === 'efficiency'} onOpenChange={(nextOpen) => setOpen(nextOpen ? 'efficiency' : null)} onChange={(value) => { setRange(value); setOpen(null); }} />}
     >
       <div className="mb-2 flex items-center gap-8 text-sm text-[#263246]">
         <LegendItem color="#2F7BFF" label="处理时长" />
@@ -376,7 +368,7 @@ function EfficiencyPanel({ range, open, setOpen, setRange }) {
           处理量
         </span>
       </div>
-      <div style={{ height: 205 }}>
+      <div style={{ height: 262 }}>
         <ResponsiveContainer width="100%" height="100%">
           <ComposedChart data={data} margin={{ top: 6, right: 8, left: -12, bottom: 0 }}>
             <defs>
@@ -405,9 +397,9 @@ function RepeatIssueTable({ range, open, setOpen, setRange }) {
   return (
     <Panel
       title="反复问题识别"
-      action={<TimeSelect value={range} open={open === 'repeat'} onToggle={() => setOpen(open === 'repeat' ? null : 'repeat')} onChange={(value) => { setRange(value); setOpen(null); }} />}
+      action={<TimeSelect value={range} open={open === 'repeat'} onOpenChange={(nextOpen) => setOpen(nextOpen ? 'repeat' : null)} onChange={(value) => { setRange(value); setOpen(null); }} />}
     >
-      <div className="overflow-y-auto overflow-x-hidden pr-1 [scrollbar-gutter:stable]" style={{ height: 252 }}>
+      <div className="overflow-y-auto overflow-x-hidden pr-1 [scrollbar-gutter:stable]" style={{ height: 312 }}>
         <table className="w-full table-fixed text-left">
           <colgroup>
             <col className="w-[34%]" />
@@ -455,6 +447,7 @@ function RepeatIssueTable({ range, open, setOpen, setRange }) {
 
 export default function Analytics() {
   const { showToast } = useToast();
+  const { refreshTime, refreshNow } = useRefreshTime();
   const [ranges, setRanges] = useState({
     trend: '近7天',
     ai: '近7天',
@@ -473,12 +466,12 @@ export default function Analytics() {
   };
 
   return (
-    <div className="flex h-[calc(100vh-104px)] min-h-[720px] flex-col gap-3 overflow-hidden">
-      <div className="flex shrink-0 items-center justify-between">
-        <h1 className="text-[26px] font-semibold leading-none text-[#111827]">数据复盘</h1>
+    <div className="flex h-[calc(100vh-104px)] min-h-[720px] flex-col gap-3">
+      <div className="page-header flex shrink-0 items-center justify-between">
+        <h1 className="page-title">数据复盘</h1>
         <div className="flex items-center gap-3">
-          <span className="text-sm text-[#7889A8]">数据更新时间：2026-06-01 09:41:52</span>
-          <button className="flex h-9 items-center gap-2 rounded-[9px] border border-[#D7DEE9] bg-white px-4 text-sm text-[#1D273B]" type="button">
+          <LiveUpdateTime className="text-sm text-[#7889A8]" value={refreshTime} />
+          <button className="flex h-9 items-center gap-2 rounded-[9px] border border-[#D7DEE9] bg-white px-4 text-sm text-[#1D273B]" onClick={refreshNow} type="button">
             <RefreshCw className="h-4 w-4" />
             刷新数据
           </button>

@@ -10,6 +10,7 @@ import {
   ShoppingCart,
 } from 'lucide-react';
 import { NavLink } from 'react-router-dom';
+import exceptionHubArt from '../assets/sidebar/exception-hub-art.png';
 
 const navItems = [
   { label: '异常工作台', path: '/dashboard', icon: Gauge },
@@ -52,21 +53,24 @@ export default function Sidebar() {
         ))}
       </nav>
 
-      <div className="px-3 pb-4">
-        <div className="relative mb-3 h-[126px] overflow-hidden rounded-[16px] bg-gradient-to-b from-[#F8FBFF] via-[#EDF6FF] to-[#F9FCFF]">
-          <div className="absolute -left-9 bottom-[-34px] h-28 w-28 rounded-full bg-[#7DB5FF]/18" />
-          <div className="absolute bottom-5 right-5 h-14 w-14 rotate-12 rounded-[20px] bg-[#2F7BFF]/14" />
-          <div className="absolute right-2 top-4 h-11 w-11 rounded-full bg-white/75" />
-          <div className="absolute left-4 top-4 text-xs font-medium text-[#7D98BF]">Exception Hub</div>
+      <div className="relative overflow-hidden px-3 pb-4 pt-[168px]">
+        <div className="pointer-events-none absolute inset-x-0 bottom-6 h-[292px] overflow-hidden">
+          <img
+            src={exceptionHubArt}
+            alt=""
+            className="h-full w-full scale-[1.15] object-cover opacity-40 [mask-image:linear-gradient(to_bottom,transparent_0%,black_18%,black_72%,transparent_100%)]"
+          />
+          <div className="absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-white to-transparent" />
+          <div className="absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-white to-transparent" />
         </div>
 
-        <div className="rounded-[12px] border border-[#E6EAF2] bg-[#FAFCFF] px-3 py-3">
+        <div className="relative z-10 px-3 py-1.5">
           <div className="flex items-center gap-2 text-xs font-medium text-[#1D273B]">
             <span className="h-2 w-2 rounded-full bg-[#24C26A]" />
             系统正常运行
           </div>
           <div className="mt-2 text-xs text-[#A1ADC2]">版本 v2.4.1</div>
-          <button className="mt-3 flex h-8 w-full items-center justify-center gap-1.5 rounded-[8px] border border-[#E6EAF2] bg-white text-xs text-[#7889A8] hover:border-[#C9D3E1]">
+          <button className="mt-3 flex h-8 w-full items-center justify-center gap-1.5 rounded-[8px] bg-white/60 text-xs text-[#7889A8] backdrop-blur-sm hover:bg-white/80">
             <PanelLeftClose className="h-3.5 w-3.5" />
             收起
           </button>

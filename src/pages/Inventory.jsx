@@ -1,16 +1,12 @@
 ﻿import React, { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
-  ArchiveX,
   Boxes,
   ChevronLeft,
   ChevronRight,
-  PackageCheck,
   RefreshCw,
   RotateCcw,
   Search,
-  Shuffle,
-  Warehouse,
 } from 'lucide-react';
 import {
   CartesianGrid,
@@ -22,9 +18,26 @@ import {
   YAxis,
 } from 'recharts';
 import DetailDrawer from '../components/common/DetailDrawer.jsx';
+import FilterSelect from '../components/common/FilterSelect.jsx';
 import PlatformLogo from '../components/common/PlatformLogo.jsx';
+import LiveUpdateTime from '../components/LiveUpdateTime.jsx';
 import { useToast } from '../components/common/Toast.jsx';
+import { useRefreshTime } from '../hooks/useRefreshTime.js';
+import stockout7Icon from '../assets/inventory-icons/stockout-7days.png';
+import stockout14Icon from '../assets/inventory-icons/stockout-14days.png';
+import slowMovingIcon from '../assets/inventory-icons/slow-moving.png';
+import transferIcon from '../assets/inventory-icons/transfer.png';
+import productPhoneStandImage from '../assets/products/acc-phone-stand.png';
+import productCarVacImage from '../assets/products/car-vac-01.png';
+import productCameraImage from '../assets/products/ele-cam-02.png';
+import productHeadphoneImage from '../assets/products/ele-head-01.png';
+import productKeyboardImage from '../assets/products/ele-kyb-01.png';
+import productHumidifierImage from '../assets/products/hom-humidifier.png';
+import productKidLampImage from '../assets/products/kid-lamp-05.png';
+import productBottleImage from '../assets/products/out-wb-01.png';
+import productPetFeederImage from '../assets/products/pet-feed-02.png';
 import { useDemoState } from '../state/DemoStateContext.jsx';
+import { useTopbarFilter } from '../state/TopbarFilterContext.jsx';
 
 const metricCards = [
   {
@@ -32,7 +45,7 @@ const metricCards = [
     value: 128,
     change: '+17',
     tone: '#FF3B3B',
-    icon: PackageCheck,
+    icon: stockout7Icon,
     filter: { availableDays: '7' },
     trend: [18, 22, 26, 19, 30, 25, 20, 27, 23, 18, 24, 41, 29, 20, 25, 19, 38],
   },
@@ -41,7 +54,7 @@ const metricCards = [
     value: 243,
     change: '+32',
     tone: '#FF3B3B',
-    icon: Warehouse,
+    icon: stockout14Icon,
     filter: { availableDays: '14' },
     trend: [25, 28, 30, 24, 33, 29, 25, 21, 27, 24, 21, 27, 43, 32, 24, 28, 22, 40],
   },
@@ -50,7 +63,7 @@ const metricCards = [
     value: 23,
     change: '-12',
     tone: '#20C997',
-    icon: ArchiveX,
+    icon: slowMovingIcon,
     filter: { riskLevel: '滞销' },
     trend: [26, 28, 30, 24, 32, 29, 25, 30, 27, 24, 28, 40, 31, 25, 29, 42, 34, 27],
   },
@@ -59,7 +72,7 @@ const metricCards = [
     value: 98,
     change: '+9',
     tone: '#FF3B3B',
-    icon: Shuffle,
+    icon: transferIcon,
     filter: { riskLevel: '调拨' },
     trend: [22, 24, 26, 21, 28, 25, 22, 19, 24, 22, 25, 30, 42, 33, 24, 27, 23, 39],
   },
@@ -82,6 +95,32 @@ const productNameOverrides = {
   'ACC-PHONE-01': '可折叠手机桌面懒人支架',
 };
 
+const skuProductImages = {
+  'ELE-HEAD-01': productHeadphoneImage,
+  'ELE-KYB-01': productKeyboardImage,
+  'ELE-CAM-02': productCameraImage,
+  'CAR-VAC-01': productCarVacImage,
+  'OUT-WB-01': productBottleImage,
+  'HOM-HUM-01': productHumidifierImage,
+  'HOM-HUM-02': productHumidifierImage,
+  'HOM-HUM-03': productHumidifierImage,
+  'ACC-PHONE-01': productPhoneStandImage,
+  'ACC-PHONE-02': productPhoneStandImage,
+};
+
+function getSkuProductImage(sku, productName = '') {
+  if (skuProductImages[sku]) return skuProductImages[sku];
+  if (sku.startsWith('PET-') || productName.includes('宠物')) return productPetFeederImage;
+  if (sku.startsWith('KID-') || productName.includes('台灯')) return productKidLampImage;
+  if (sku.startsWith('CAR-') || productName.includes('吸尘')) return productCarVacImage;
+  if (sku.startsWith('OUT-') || productName.includes('水杯')) return productBottleImage;
+  if (sku.startsWith('HOM-') || productName.includes('加湿')) return productHumidifierImage;
+  if (sku.startsWith('ACC-') || productName.includes('支架')) return productPhoneStandImage;
+  if (sku.startsWith('ELE-') && productName.includes('键盘')) return productKeyboardImage;
+  if (sku.startsWith('ELE-') && productName.includes('摄像')) return productCameraImage;
+  return productHeadphoneImage;
+}
+
 const skuSalesTrend = [
   { date: '5.26', sales: 14 },
   { date: '5.27', sales: 16 },
@@ -99,67 +138,80 @@ function getVisiblePages(currentPage, pageCount) {
   return Array.from({ length: Math.min(5, pageCount) }, (_, index) => start + index);
 }
 
+function normalizeKeyword(value) {
+  return String(value ?? '').trim().toLowerCase();
+}
+
+function matchesKeyword(fields, keyword) {
+  const normalizedKeyword = normalizeKeyword(keyword);
+  if (!normalizedKeyword) return true;
+  return fields.some((field) => normalizeKeyword(field).includes(normalizedKeyword));
+}
+
 function Sparkline({ points, color }) {
   const width = 260;
   const height = 36;
+  const horizontalPadding = 3;
   const min = Math.min(...points);
   const max = Math.max(...points);
   const range = max - min || 1;
-  const step = width / (points.length - 1);
+  const step = (width - horizontalPadding * 2) / (points.length - 1);
   const coords = points.map((point, index) => {
-    const x = index * step;
+    const x = horizontalPadding + index * step;
     const y = height - ((point - min) / range) * 27 - 4;
     return [x, y];
   });
   const line = coords.map(([x, y], index) => `${index === 0 ? 'M' : 'L'}${x},${y}`).join(' ');
-  const area = `${line} L${width},${height} L0,${height} Z`;
+  const area = `${line} L${width - horizontalPadding},${height} L${horizontalPadding},${height} Z`;
   const id = `inventory-metric-${color.replace('#', '')}`;
 
   return (
-    <svg
-      aria-hidden="true"
-      className="pointer-events-none absolute bottom-4 left-7 right-7 h-8"
-      viewBox={`0 0 ${width} ${height}`}
-      preserveAspectRatio="none"
-    >
-      <defs>
-        <linearGradient id={id} x1="0" x2="0" y1="0" y2="1">
-          <stop offset="0%" stopColor={color} stopOpacity="0.2" />
-          <stop offset="100%" stopColor={color} stopOpacity="0" />
-        </linearGradient>
-      </defs>
-      <path d={area} fill={`url(#${id})`} />
-      <path d={line} fill="none" stroke={color} strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.2" />
-    </svg>
+    <div className="pointer-events-none absolute bottom-4 left-6 right-6 h-6">
+      <svg
+        aria-hidden="true"
+        className="h-full w-full"
+        viewBox={`0 0 ${width} ${height}`}
+        preserveAspectRatio="none"
+      >
+        <defs>
+          <linearGradient id={id} x1="0" x2="0" y1="0" y2="1">
+            <stop offset="0%" stopColor={color} stopOpacity="0.24" />
+            <stop offset="100%" stopColor={color} stopOpacity="0" />
+          </linearGradient>
+        </defs>
+        <path d={area} fill={`url(#${id})`} />
+        <path d={line} fill="none" stroke={color} strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.2" />
+        <circle cx={coords.at(-1)[0]} cy={coords.at(-1)[1]} r="2.5" fill="#fff" stroke={color} strokeWidth="2" />
+      </svg>
+    </div>
   );
 }
 
 function InventoryMetricCard({ card, onDetail }) {
-  const Icon = card.icon;
   const positive = card.change.startsWith('+');
   const changeClass = positive ? 'text-[#FF2D2D]' : 'text-[#16C7A1]';
 
   return (
-    <article className="relative h-[150px] overflow-hidden rounded-[14px] border border-[#E6EAF2] bg-white px-6 py-5 shadow-[var(--shadow-card)]">
-      <div className="relative z-10 flex items-start justify-between">
-        <div className="flex items-start gap-3.5">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[11px] bg-gradient-to-br from-[#EAF2FF] to-[#CDE0FF] text-[#2F7BFF] shadow-[0_8px_16px_rgba(47,123,255,0.16)]">
-            <Icon className="h-5 w-5" />
+    <article className="relative h-[160px] overflow-hidden rounded-[14px] border border-[#E8ECF3] bg-white px-6 py-4 shadow-[0_8px_24px_rgba(28,39,71,0.06)]">
+      <div className="relative z-10">
+        <div className="flex items-center gap-3">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center">
+            <img className="h-10 w-10 object-contain" src={card.icon} alt="" aria-hidden="true" />
           </div>
-          <div>
-            <div className="text-[16px] font-semibold leading-6 text-[#1D273B]">{card.label}</div>
-            <div className="mt-3 text-[30px] font-semibold leading-none tracking-tight text-black">{card.value}</div>
-            <div className="mt-3 flex items-center gap-2 text-[13px]">
-              <span className="text-[#5F6B7A]">较昨日</span>
-              <span className={changeClass}>
-                {card.change} {positive ? '↑' : '↓'}
-              </span>
-            </div>
-          </div>
+          <div className="min-w-0 truncate text-[17px] font-medium leading-6 text-[#111827]">{card.label}</div>
         </div>
-        <button className="mt-[67px] text-[13px] font-medium text-[#2F7BFF]" onClick={onDetail} type="button">
-          查看详情
-        </button>
+        <div className="mt-0.5 whitespace-nowrap text-[30px] font-semibold leading-none tracking-tight text-black">{card.value}</div>
+        <div className="mt-2 flex items-center justify-between text-[13px] leading-5">
+          <div className="flex items-center gap-2">
+            <span className="text-[#5F6B7A]">较昨日</span>
+            <span className={changeClass}>
+              {card.change} {positive ? '↑' : '↓'}
+            </span>
+          </div>
+          <button className="shrink-0 font-medium text-[#2F7BFF]" onClick={onDetail} type="button">
+            查看详情
+          </button>
+        </div>
       </div>
       <Sparkline points={card.trend} color={card.tone} />
     </article>
@@ -168,24 +220,20 @@ function InventoryMetricCard({ card, onDetail }) {
 
 function FilterBox({ label, value, options, onChange }) {
   return (
-    <label className="flex items-center gap-2">
-      <span className="text-sm text-[#7889A8]">{label}</span>
-      <div className="relative">
-        <select
-          className="h-10 min-w-[122px] appearance-none rounded-[8px] border border-[#D9E1EE] bg-white pl-4 pr-9 text-sm font-medium text-[#1D273B] outline-none transition focus:border-[#2F7BFF]"
-          value={value}
-          onChange={(event) => onChange(event.target.value)}
-        >
-          <option value="">全部</option>
-          {options.map((option) => (
-            <option key={option.value} value={option.value}>
-              {option.label}
-            </option>
-          ))}
-        </select>
-        <ChevronRight className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 rotate-90 text-[#1D273B]" />
-      </div>
-    </label>
+    <FilterSelect
+      label={label}
+      value={value}
+      options={options}
+      placeholder="全部"
+      onChange={onChange}
+      ariaLabel={label}
+      className="flex items-center gap-2"
+      labelClassName="text-sm text-[#7889A8]"
+      controlClassName="min-w-[122px]"
+      triggerClassName="h-10 min-w-[122px] rounded-[8px] px-4 text-sm font-medium"
+      menuClassName="w-max min-w-full"
+      optionClassName="px-4 py-2 text-sm"
+    />
   );
 }
 
@@ -218,6 +266,8 @@ export default function Inventory() {
   const location = useLocation();
   const { showToast } = useToast();
   const { createInventoryTask, inventory } = useDemoState();
+  const { keyword: topbarKeyword, platform: topbarPlatform } = useTopbarFilter();
+  const { refreshTime, refreshNow } = useRefreshTime();
   const [filters, setFilters] = useState({
     platform: '',
     warehouse: '',
@@ -255,6 +305,7 @@ export default function Inventory() {
 
   const filteredRows = useMemo(() => {
     return inventory.filter((item) => {
+      if (topbarPlatform && item.platform !== topbarPlatform) return false;
       if (filters.platform && item.platform !== filters.platform) return false;
       if (filters.warehouse && item.warehouse !== filters.warehouse) return false;
       if (filters.riskLevel && item.riskLevel !== filters.riskLevel) return false;
@@ -262,13 +313,29 @@ export default function Inventory() {
       if (filters.availableDays === '14' && item.availableDays > 14) return false;
       if (filters.availableDays === '30' && item.availableDays > 30) return false;
       if (filters.availableDays === 'slow' && item.availableDays < 90) return false;
+      if (
+        !matchesKeyword(
+          [
+            item.sku,
+            item.productName,
+            item.platform,
+            item.warehouse,
+            item.riskLevel,
+            item.aiSuggestion,
+            item.suggestedReplenishment,
+          ],
+          topbarKeyword,
+        )
+      ) {
+        return false;
+      }
       return true;
     });
-  }, [filters, inventory]);
+  }, [filters, inventory, topbarKeyword, topbarPlatform]);
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [filters]);
+  }, [filters, topbarKeyword, topbarPlatform]);
 
   const pageCount = Math.max(1, Math.ceil(filteredRows.length / INVENTORY_PAGE_SIZE));
   const safePage = Math.min(currentPage, pageCount);
@@ -284,6 +351,11 @@ export default function Inventory() {
     setAdjustReason('覆盖安全库存');
     setAdjustNote('');
   };
+  const handleSkuRowKeyDown = (event, row) => {
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    event.preventDefault();
+    openSkuDrawer(row);
+  };
 
   const handleModifyPurchase = () => showToast({ message: '已保存修改采购数量', type: 'success' });
   const handleRejectSuggestion = () => showToast({ message: '已驳回AI建议', type: 'info' });
@@ -296,13 +368,14 @@ export default function Inventory() {
 
   return (
     <>
-      <div className="flex h-[calc(100vh-104px)] min-h-[720px] flex-col gap-3 overflow-hidden">
-        <header className="flex shrink-0 items-center justify-between">
-          <h1 className="text-[26px] font-semibold tracking-tight text-[#111827]">库存决策</h1>
+      <div className="flex h-[calc(100vh-104px)] min-h-[720px] flex-col gap-3">
+        <header className="page-header flex shrink-0 items-center justify-between">
+          <h1 className="page-title">库存决策</h1>
           <div className="flex items-center gap-4">
-            <span className="text-sm text-[#7889A8]">数据更新时间：2026-06-01 09:41:52</span>
+            <LiveUpdateTime className="text-sm text-[#7889A8]" value={refreshTime} />
             <button
               className="flex h-9 items-center gap-2 rounded-[9px] border border-[#DDE4F0] bg-white px-3 text-sm font-medium text-[#1D273B] shadow-[0_4px_10px_rgba(28,39,71,0.04)]"
+              onClick={refreshNow}
               type="button"
             >
               <RefreshCw className="h-4 w-4" />
@@ -367,31 +440,59 @@ export default function Inventory() {
 
           <div className="h-[calc(100%-122px)] overflow-y-auto overflow-x-hidden px-5 [scrollbar-gutter:stable]">
             <table className="w-full table-fixed text-left">
+              <colgroup>
+                <col style={{ width: '6%' }} />
+                <col style={{ width: '10%' }} />
+                <col style={{ width: '19%' }} />
+                <col style={{ width: '6%' }} />
+                <col style={{ width: '6%' }} />
+                <col style={{ width: '7%' }} />
+                <col style={{ width: '7%' }} />
+                <col style={{ width: '7%' }} />
+                <col style={{ width: '7%' }} />
+                <col style={{ width: '17%' }} />
+                <col style={{ width: '8%' }} />
+              </colgroup>
               <thead className="sticky top-0 z-10 h-[52px] border-b border-[#E3E9F3] bg-white text-sm font-semibold text-[#8A98B3]">
                 <tr>
-                  <th className="w-[90px] pl-2">风险等级</th>
-                  <th className="w-[142px]">SKU</th>
-                  <th className="w-[220px]">商品名称</th>
-                  <th className="w-[84px] text-center">平台</th>
-                  <th className="w-[70px] text-center">仓库</th>
-                  <th className="w-[90px] text-center">当前库存</th>
-                  <th className="w-[90px] text-center">在途库存</th>
-                  <th className="w-[88px] text-center">日均销量</th>
-                  <th className="w-[88px] text-center">可售天数</th>
+                  <th className="pl-2">风险等级</th>
+                  <th>SKU</th>
+                  <th>商品名称</th>
+                  <th className="text-center">平台</th>
+                  <th className="text-center">仓库</th>
+                  <th className="text-center">当前库存</th>
+                  <th className="text-center">在途库存</th>
+                  <th className="text-center">日均销量</th>
+                  <th className="text-center">可售天数</th>
                   <th>AI建议</th>
-                  <th className="w-[64px] pr-2 text-right">操作</th>
+                  <th className="pr-2 text-right">操作</th>
                 </tr>
               </thead>
               <tbody className="text-sm text-[#1D273B]">
-                {visibleRows.map((row) => (
-                  <tr key={row.sku} className="h-[52px] border-b border-[#E3E9F3] transition hover:bg-[#F8FAFE]">
+                {visibleRows.map((row) => {
+                  const isSelected = selectedSku?.sku === row.sku;
+
+                  return (
+                  <tr
+                    key={row.sku}
+                    aria-selected={isSelected}
+                    tabIndex={0}
+                    onClick={() => openSkuDrawer(row)}
+                    onKeyDown={(event) => handleSkuRowKeyDown(event, row)}
+                    className={`h-[52px] cursor-pointer border-b border-[#E3E9F3] transition focus-visible:outline-none ${
+                      isSelected ? 'bg-[#EAF2FF] shadow-[inset_3px_0_0_#2F7BFF]' : 'hover:bg-[#F8FAFE]'
+                    }`}
+                  >
                     <td className="pl-2">
                       <RiskBadge level={row.riskLevel} />
                     </td>
                     <td>
                       <button
                         className="font-medium text-[#2F7BFF] underline underline-offset-2"
-                        onClick={() => openSkuDrawer(row)}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          openSkuDrawer(row);
+                        }}
                         type="button"
                       >
                         {row.sku}
@@ -408,12 +509,20 @@ export default function Inventory() {
                     <td className={`text-center ${redIfLow(row, 'availableDays') ? 'font-medium text-[#FF2D2D]' : ''}`}>{row.availableDays}</td>
                     <td className={`truncate pr-3 ${row.riskLevel === '高' ? 'font-medium text-[#FF2D2D]' : ''}`}>{suggestionSummary(row)}</td>
                     <td className="pr-2 text-right">
-                      <button className="font-medium text-[#2F7BFF]" onClick={() => openSkuDrawer(row)} type="button">
+                      <button
+                        className="font-medium text-[#2F7BFF]"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          openSkuDrawer(row);
+                        }}
+                        type="button"
+                      >
                         查看
                       </button>
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
             {filteredRows.length === 0 ? (
@@ -533,6 +642,7 @@ function SkuDetailDrawerContent({
   const detail = selectedSku.detail ?? {};
   const productName = detail.displayName ?? productNameOverrides[selectedSku.sku] ?? selectedSku.productName;
   const warehouse = detail.warehouseName ?? `${selectedSku.warehouse}仓`;
+  const productImage = getSkuProductImage(selectedSku.sku, productName);
   const replenishment = selectedSku.suggestedReplenishment || 300;
   const confidence = Math.round((selectedSku.confidence || 0.8) * 100);
   const salesTrend = detail.salesTrend ?? skuSalesTrend;
@@ -547,11 +657,8 @@ function SkuDetailDrawerContent({
     <div className="space-y-3">
       <section className="rounded-[14px] border border-[#E6EAF2] bg-white p-3">
         <div className="flex items-center gap-3">
-          <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded-[12px] bg-gradient-to-br from-[#DCEAFF] via-[#F4F8FF] to-[#BFD6FF]">
-            <div className="absolute left-3 top-5 h-7 w-3 rounded-full border-2 border-[#2F7BFF] bg-white/75" />
-            <div className="absolute right-3 top-5 h-7 w-3 rounded-full border-2 border-[#2F7BFF] bg-white/75" />
-            <div className="absolute left-[18px] top-3 h-8 w-7 rounded-t-full border-2 border-b-0 border-[#2F7BFF]" />
-            <div className="absolute bottom-2 left-1/2 h-1 w-8 -translate-x-1/2 rounded-full bg-[#8FB8FF]" />
+          <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-[12px] bg-gradient-to-br from-[#DCEAFF] via-[#F4F8FF] to-[#BFD6FF]">
+            <img className="h-full w-full object-contain p-1.5" src={productImage} alt={productName} />
           </div>
           <div className="min-w-0 flex-1">
             <div className="truncate text-sm font-semibold text-[#1D273B]">{productName}</div>

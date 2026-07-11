@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useMemo, useState } from 'react';
 import { inventory as mockInventory, orders as mockOrders } from '../data/mockData.js';
-import { buildInventoryTask, buildOrderTask, completeTaskState } from './demoFlow.js';
+import { buildInventoryTask, buildOrderTask, buildSuggestionTask, completeTaskState } from './demoFlow.js';
 
 const DemoStateContext = createContext(null);
 
@@ -29,6 +29,21 @@ export function DemoStateProvider({ children }) {
     return task;
   };
 
+  const createSuggestionTask = (suggestion, context) => {
+    const task = buildSuggestionTask(suggestion, context);
+    setGeneratedTasks((current) => [task, ...current]);
+
+    if (task.sourceKind === 'order') {
+      setOrders((current) => current.map((item) => (item.id === task.sourceId ? { ...item, status: '处理中' } : item)));
+    }
+
+    if (task.sourceKind === 'inventory') {
+      setInventory((current) => current.map((item) => (item.sku === task.sourceId ? { ...item, status: '待补货' } : item)));
+    }
+
+    return task;
+  };
+
   const updateGeneratedTask = (taskId, updater) => {
     setGeneratedTasks((current) =>
       current.map((task) => {
@@ -54,6 +69,7 @@ export function DemoStateProvider({ children }) {
       updateOrderStatus,
       createOrderTask,
       createInventoryTask,
+      createSuggestionTask,
       updateGeneratedTask,
       completeTask,
     }),

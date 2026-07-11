@@ -17,12 +17,16 @@ import {
   UserRound,
   X,
 } from 'lucide-react';
+import FilterSelect from '../components/common/FilterSelect.jsx';
 import RiskTag from '../components/common/RiskTag.jsx';
 import SlaCountdown from '../components/common/SlaCountdown.jsx';
+import LiveUpdateTime from '../components/LiveUpdateTime.jsx';
 import { useToast } from '../components/common/Toast.jsx';
 import { tasks as mockTasks } from '../data/mockData.js';
+import { useRefreshTime } from '../hooks/useRefreshTime.js';
 import { useSlaClock } from '../hooks/useSlaClock.js';
 import { useDemoState } from '../state/DemoStateContext.jsx';
+import { useTopbarFilter } from '../state/TopbarFilterContext.jsx';
 import { getRemainingSlaSeconds } from '../utils/sla.js';
 
 const tabs = ['全部', '待分派', '已分派', '处理中', '待确认', '已完成', '已超时', '已升级'];
@@ -35,6 +39,33 @@ const TASK_PAGE_SIZE = 9;
 function getVisiblePages(currentPage, pageCount) {
   const start = Math.max(1, Math.min(currentPage - 2, pageCount - 4));
   return Array.from({ length: Math.min(5, pageCount) }, (_, index) => start + index);
+}
+
+function normalizeKeyword(value) {
+  return String(value ?? '').trim().toLowerCase();
+}
+
+function matchesKeyword(fields, keyword) {
+  const normalizedKeyword = normalizeKeyword(keyword);
+  if (!normalizedKeyword) return true;
+  return fields.some((field) => normalizeKeyword(field).includes(normalizedKeyword));
+}
+
+function matchesTaskKeyword(task, keyword) {
+  return matchesKeyword(
+    [
+      task.title,
+      task.source,
+      task.sourceType,
+      task.owner,
+      task.status,
+      task.riskLevel,
+      task.description,
+      task.impact,
+      ...(task.processLogs ?? []).flatMap((log) => [log.time, log.owner, log.action, log.detail]),
+    ],
+    keyword,
+  );
 }
 
 function statusForTab(status) {
@@ -85,23 +116,22 @@ function Checkbox({ checked, onChange }) {
 
 function FilterBox({ label, value, options, onChange, wide = false }) {
   return (
-    <label className={wide ? 'w-[250px]' : 'w-[150px]'}>
-      <span className="mb-1.5 block text-[13px] font-medium text-[#7889A8]">{label}</span>
-      <span className="relative block">
-        <select
-          className="h-10 w-full appearance-none rounded-[7px] border border-[#D7DEE9] bg-white px-3 pr-9 text-sm font-medium text-[#263246] outline-none transition focus:border-[#2F7BFF]"
-          value={value}
-          onChange={(event) => onChange(event.target.value)}
-        >
-          {options.map((option) => (
-            <option key={option} value={option}>
-              {option}
-            </option>
-          ))}
-        </select>
-        <ChevronRight className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#1D273B]" />
-      </span>
-    </label>
+    <FilterSelect
+      label={label}
+      value={value}
+      options={options}
+      placeholder="全部"
+      placeholderValue="全部"
+      includePlaceholder={false}
+      onChange={onChange}
+      ariaLabel={label}
+      className={wide ? 'w-[250px]' : 'w-[150px]'}
+      labelClassName="mb-1.5 block text-[13px] font-medium text-[#7889A8]"
+      controlClassName="w-full"
+      triggerClassName="h-10 w-full rounded-[7px] px-3 text-sm font-medium"
+      menuClassName="w-max min-w-full"
+      optionClassName="px-3 py-2 text-sm"
+    />
   );
 }
 
@@ -410,6 +440,8 @@ export default function Tasks() {
   const location = useLocation();
   const { showToast } = useToast();
   const { completeTask: completeGeneratedTask, generatedTasks, updateGeneratedTask } = useDemoState();
+  const { keyword: topbarKeyword } = useTopbarFilter();
+  const { refreshTime, refreshNow } = useRefreshTime();
   const slaClock = useSlaClock();
   const [taskRows, setTaskRows] = useState(() => mockTasks);
   const [activeTab, setActiveTab] = useState('全部');
@@ -438,11 +470,11 @@ export default function Tasks() {
   const filteredTasks = useMemo(() => {
     return allTaskRows.filter((task) => {
       const tabMatch = activeTab === '全部' || statusForTab(task.status) === activeTab;
-      return tabMatch && (filters.owner === '全部' || task.owner === filters.owner) && (filters.source === '全部' || task.sourceType === filters.source) && (filters.risk === '全部' || task.riskLevel === filters.risk) && matchesLiveDeadlineFilter(task, filters.deadline, slaClock.nowMs, slaClock.anchorMs);
+      return tabMatch && (filters.owner === '全部' || task.owner === filters.owner) && (filters.source === '全部' || task.sourceType === filters.source) && (filters.risk === '全部' || task.riskLevel === filters.risk) && matchesLiveDeadlineFilter(task, filters.deadline, slaClock.nowMs, slaClock.anchorMs) && matchesTaskKeyword(task, topbarKeyword);
     });
-  }, [activeTab, allTaskRows, filters, slaClock.anchorMs, slaClock.nowMs]);
+  }, [activeTab, allTaskRows, filters, slaClock.anchorMs, slaClock.nowMs, topbarKeyword]);
 
-  useEffect(() => { setCurrentPage(1); }, [activeTab, filters]);
+  useEffect(() => { setCurrentPage(1); }, [activeTab, filters, topbarKeyword]);
 
   const pageCount = Math.max(1, Math.ceil(filteredTasks.length / TASK_PAGE_SIZE));
   const safePage = Math.min(currentPage, pageCount);
@@ -472,8 +504,8 @@ export default function Tasks() {
   const resetFilters = () => { setFilters({ owner: '全部', source: '全部', risk: '全部', deadline: '全部' }); setActiveTab('全部'); };
 
   return (
-    <div className="flex h-[calc(100vh-104px)] min-h-[760px] flex-col overflow-hidden">
-      <header className="mb-4 flex shrink-0 items-center justify-between"><h1 className="text-[24px] font-semibold tracking-[-0.01em] text-[#111827]">任务协同</h1><div className="flex items-center gap-4"><span className="text-sm text-[#8A98B3]">数据更新时间：2026-06-01 09:41:52</span><button className="inline-flex h-10 items-center gap-2 rounded-[9px] border border-[#E2E8F0] bg-white px-4 text-sm font-medium text-[#1D273B] shadow-[0_3px_10px_rgba(28,39,71,0.04)]" type="button"><RefreshCw className="h-4 w-4" />刷新数据</button></div></header>
+    <div className="flex h-[calc(100vh-104px)] min-h-[760px] flex-col">
+      <header className="page-header mb-4 flex shrink-0 items-center justify-between"><h1 className="page-title">任务协同</h1><div className="flex items-center gap-4"><LiveUpdateTime className="text-sm text-[#8A98B3]" value={refreshTime} /><button className="inline-flex h-10 items-center gap-2 rounded-[9px] border border-[#E2E8F0] bg-white px-4 text-sm font-medium text-[#1D273B] shadow-[0_3px_10px_rgba(28,39,71,0.04)]" onClick={refreshNow} type="button"><RefreshCw className="h-4 w-4" />刷新数据</button></div></header>
       <div className="grid min-h-0 flex-1 gap-4" style={{ gridTemplateColumns: 'minmax(0, 1fr) 405px' }}>
         <div className="flex min-h-0 flex-col">
           <nav className="mb-3 flex shrink-0 items-center" style={{ columnGap: 56 }}>{tabs.map((tab) => (<button key={tab} className={`relative h-9 text-[15px] font-medium ${activeTab === tab ? 'text-[#2F7BFF]' : 'text-[#1D273B]'}`} onClick={() => setActiveTab(tab)} type="button">{tab}{activeTab === tab ? <span className="absolute bottom-0 left-0 h-1 w-8 rounded-full bg-[#2F7BFF]" /> : null}</button>))}</nav>

@@ -2,24 +2,34 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
   Check,
-  ChevronDown,
   ChevronLeft,
   ChevronRight,
   ChevronsUpDown,
   Clock3,
-  Package,
   RefreshCw,
   Settings,
   Sparkles,
   UserRound,
 } from 'lucide-react';
 import DetailDrawer from '../components/common/DetailDrawer.jsx';
+import FilterSelect from '../components/common/FilterSelect.jsx';
 import PlatformLogo from '../components/common/PlatformLogo.jsx';
 import RiskTag from '../components/common/RiskTag.jsx';
 import SlaCountdown from '../components/common/SlaCountdown.jsx';
+import LiveUpdateTime from '../components/LiveUpdateTime.jsx';
+import productPhoneStandImage from '../assets/products/acc-phone-stand.png';
+import productCarVacImage from '../assets/products/car-vac-01.png';
+import productHeadphoneImage from '../assets/products/ele-head-01.png';
+import productKeyboardImage from '../assets/products/ele-kyb-01.png';
+import productHumidifierImage from '../assets/products/hom-humidifier.png';
+import productKidLampImage from '../assets/products/kid-lamp-05.png';
+import productBottleImage from '../assets/products/out-wb-01.png';
+import productPetFeederImage from '../assets/products/pet-feed-02.png';
 import { useToast } from '../components/common/Toast.jsx';
+import { useRefreshTime } from '../hooks/useRefreshTime.js';
 import { useSlaClock } from '../hooks/useSlaClock.js';
 import { useDemoState } from '../state/DemoStateContext.jsx';
+import { useTopbarFilter } from '../state/TopbarFilterContext.jsx';
 import { getRemainingSlaSeconds } from '../utils/sla.js';
 
 const tabs = ['全部', '地址异常', '缺货', '物流延误', '平台同步失败', '支付异常', '退款', '清关异常'];
@@ -34,6 +44,34 @@ const filterDefaults = {
   sla: '',
 };
 
+const skuProductImages = {
+  'ELE-HEAD-01': productHeadphoneImage,
+  'CAR-VAC-01': productCarVacImage,
+  'ACC-PHONE-01': productPhoneStandImage,
+  'ACC-PHONE-02': productPhoneStandImage,
+  'HOM-HUM-01': productHumidifierImage,
+  'HOM-HUM-02': productHumidifierImage,
+  'HOM-HUM-03': productHumidifierImage,
+  'OUT-WB-01': productBottleImage,
+  'ELE-KYB-01': productKeyboardImage,
+  'PET-FEED-02': productPetFeederImage,
+  'KID-LAMP-05': productKidLampImage,
+};
+
+const skuProductNames = {
+  'ELE-HEAD-01': '头戴式无线降噪耳机Pro',
+  'CAR-VAC-01': '便携式车载无线吸尘器',
+  'ACC-PHONE-01': '可折叠手机桌面懒人支架',
+  'ACC-PHONE-02': '手机桌面懒人支架',
+  'HOM-HUM-01': '家用静音小型桌面加湿器',
+  'HOM-HUM-02': '静音小型桌面加湿器',
+  'HOM-HUM-03': '小型桌面加湿器',
+  'OUT-WB-01': '运动保温水杯 750ml',
+  'ELE-KYB-01': '有线机械键盘 黑轴',
+  'PET-FEED-02': '智能宠物自动喂食器',
+  'KID-LAMP-05': '儿童护眼学习台灯',
+};
+
 const ORDER_PAGE_SIZE = 11;
 
 function getVisiblePages(currentPage, pageCount) {
@@ -43,6 +81,16 @@ function getVisiblePages(currentPage, pageCount) {
 
 function uniqueOptions(rows, key) {
   return [...new Set(rows.map((row) => row[key]).filter(Boolean))];
+}
+
+function normalizeKeyword(value) {
+  return String(value ?? '').trim().toLowerCase();
+}
+
+function matchesKeyword(fields, keyword) {
+  const normalizedKeyword = normalizeKeyword(keyword);
+  if (!normalizedKeyword) return true;
+  return fields.some((field) => normalizeKeyword(field).includes(normalizedKeyword));
 }
 
 function formatCurrency(value) {
@@ -73,6 +121,8 @@ export default function Orders() {
   const location = useLocation();
   const { showToast } = useToast();
   const { createOrderTask, orders: rows, updateOrderStatus } = useDemoState();
+  const { keyword: topbarKeyword, platform: topbarPlatform, store: topbarStore } = useTopbarFilter();
+  const { refreshTime, refreshNow } = useRefreshTime();
   const slaClock = useSlaClock();
   const [activeTab, setActiveTab] = useState('全部');
   const [filters, setFilters] = useState(filterDefaults);
@@ -115,17 +165,34 @@ export default function Orders() {
         tabMatch &&
         (!filters.platform || row.platform === filters.platform) &&
         (!filters.store || row.store === filters.store) &&
+        (!topbarPlatform || row.platform === topbarPlatform) &&
+        (!topbarStore || row.store === topbarStore) &&
         (!filters.country || row.country === filters.country) &&
         (!filters.riskLevel || row.riskLevel === filters.riskLevel) &&
         (!filters.owner || row.owner === filters.owner) &&
-        matchesLiveSlaFilter(row.remainingSLA, filters.sla, slaClock.nowMs, slaClock.anchorMs)
+        matchesLiveSlaFilter(row.remainingSLA, filters.sla, slaClock.nowMs, slaClock.anchorMs) &&
+        matchesKeyword(
+          [
+            row.orderNo,
+            row.relatedSku,
+            row.abnormalType,
+            row.store,
+            row.platform,
+            row.country,
+            row.owner,
+            row.status,
+            row.aiSuggestion,
+            row.impact,
+          ],
+          topbarKeyword,
+        )
       );
     });
-  }, [activeTab, filters, rows, slaClock.anchorMs, slaClock.nowMs]);
+  }, [activeTab, filters, rows, slaClock.anchorMs, slaClock.nowMs, topbarKeyword, topbarPlatform, topbarStore]);
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [activeTab, filters]);
+  }, [activeTab, filters, topbarKeyword, topbarPlatform, topbarStore]);
 
   const pageCount = Math.max(1, Math.ceil(filteredRows.length / ORDER_PAGE_SIZE));
   const safePage = Math.min(currentPage, pageCount);
@@ -189,12 +256,13 @@ export default function Orders() {
 
   return (
     <div className="orders-page flex flex-col">
-      <header className="mb-5 flex shrink-0 items-center justify-between">
-        <h1 className="text-[24px] font-semibold tracking-[-0.01em] text-[#111827]">订单异常</h1>
+      <header className="page-header mb-5 flex shrink-0 items-center justify-between">
+        <h1 className="page-title">订单异常</h1>
         <div className="flex items-center gap-4">
-          <span className="text-sm text-[#8A98B3]">数据更新时间：2026-06-01 09:41:52</span>
+          <LiveUpdateTime className="text-sm text-[#8A98B3]" value={refreshTime} />
           <button
             className="inline-flex h-10 items-center gap-2 rounded-[9px] border border-[#E2E8F0] bg-white px-4 text-sm font-medium text-[#1D273B] shadow-[0_3px_10px_rgba(28,39,71,0.04)]"
+            onClick={refreshNow}
             type="button"
           >
             <RefreshCw className="h-4 w-4" />
@@ -296,8 +364,14 @@ export default function Orders() {
             <tbody>
               {visibleRows.map((row) => {
                 const selected = selectedIds.includes(row.id);
+                const active = drawerOrderId === row.id;
                 return (
-                  <tr key={row.id} className={`orders-row ${selected ? 'orders-row-selected' : ''}`}>
+                  <tr
+                    key={row.id}
+                    className={`orders-row ${selected ? 'orders-row-selected' : ''} ${active ? 'orders-row-active' : ''}`}
+                    onClick={() => openDrawer(row)}
+                    aria-current={active ? 'true' : undefined}
+                  >
                     <td>
                       <Checkbox checked={selected} onChange={() => toggleRow(row.id)} />
                     </td>
@@ -306,7 +380,14 @@ export default function Orders() {
                     </td>
                     <td className="truncate">{row.abnormalType}</td>
                     <td className="truncate">
-                      <button className="orders-order-link truncate" onClick={() => openDrawer(row)} type="button">
+                      <button
+                        className="orders-order-link truncate"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          openDrawer(row);
+                        }}
+                        type="button"
+                      >
                         {row.orderNo}
                       </button>
                     </td>
@@ -322,7 +403,14 @@ export default function Orders() {
                     <td className="truncate">{row.owner}</td>
                     <td className={statusClass(row.status)}>{row.status}</td>
                     <td>
-                      <button className="font-medium text-[#2F7BFF]" onClick={() => openDrawer(row)} type="button">
+                      <button
+                        className="font-medium text-[#2F7BFF]"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          openDrawer(row);
+                        }}
+                        type="button"
+                      >
                         查看
                       </button>
                     </td>
@@ -408,20 +496,20 @@ export default function Orders() {
 
 function OrderFilter({ label, value, options, onChange, wide = false }) {
   return (
-    <label className={`orders-filter ${wide ? 'orders-filter-wide' : ''}`}>
-      <span className="orders-filter-label">{label}</span>
-      <div className="relative">
-        <select className="orders-filter-select" value={value} onChange={(event) => onChange(event.target.value)}>
-          <option value="">全部</option>
-          {options.map((option) => (
-            <option key={option} value={option}>
-              {option}
-            </option>
-          ))}
-        </select>
-        <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#1D273B]" />
-      </div>
-    </label>
+    <FilterSelect
+      label={label}
+      value={value}
+      options={options}
+      placeholder="全部"
+      onChange={onChange}
+      ariaLabel={label}
+      className={`orders-filter ${wide ? 'orders-filter-wide' : ''}`}
+      labelClassName="orders-filter-label"
+      controlClassName="w-full"
+      triggerClassName="h-11 w-full rounded-[7px] px-3.5 text-[15px] font-semibold"
+      menuClassName="w-max min-w-full"
+      optionClassName="px-3.5 py-2.5 text-[15px]"
+    />
   );
 }
 
@@ -456,7 +544,10 @@ function Checkbox({ checked, onChange }) {
       className={`flex h-5 w-5 items-center justify-center rounded-[4px] border transition-colors ${
         checked ? 'border-[#2F7BFF] bg-[#2F7BFF]' : 'border-[#C9D2DF] bg-white'
       }`}
-      onClick={onChange}
+      onClick={(event) => {
+        event.stopPropagation();
+        onChange();
+      }}
       type="button"
       aria-pressed={checked}
     >
@@ -488,6 +579,7 @@ function OrderDetailDrawer({
   slaClock,
 }) {
   const detail = useMemo(() => getOrderDetail(order), [order]);
+  const productImage = skuProductImages[detail.skuCode] ?? productHeadphoneImage;
 
   return (
     <DetailDrawer
@@ -571,11 +663,11 @@ function OrderDetailDrawer({
 
           <DrawerSection title="关联SKU（1）">
             <div className="flex items-center gap-3 rounded-[10px] bg-[#F4F6FB] p-3">
-              <div className="relative flex h-[74px] w-[74px] shrink-0 items-center justify-center overflow-hidden rounded-[14px] bg-gradient-to-br from-[#D9ECFF] via-[#97BCE4] to-[#355A7E] shadow-inner">
-                <div className="absolute bottom-3 h-9 w-12 rounded-b-[20px] rounded-t-[6px] bg-[#6D8FB2]" />
-                <div className="absolute top-4 left-4 h-7 w-7 rounded-full bg-[#254462] shadow-[18px_0_0_#254462]" />
-                <Package className="relative z-10 mt-6 h-5 w-5 text-white/70" />
-              </div>
+              <img
+                src={productImage}
+                alt={detail.skuName}
+                className="h-[74px] w-[74px] shrink-0 rounded-[14px] bg-[#EAF2FF] object-cover"
+              />
               <div className="min-w-0 flex-1">
                 <div className="truncate text-sm font-semibold text-[#1D273B]">{detail.skuName}</div>
                 <div className="mt-1 text-sm text-[#8A98B3]">SKU：{detail.skuCode}</div>
@@ -630,6 +722,7 @@ function OrderDetailDrawer({
 function getOrderDetail(order) {
   if (!order) return {};
   const detail = order.detail ?? {};
+  const skuCode = detail.skuCode ?? order.relatedSku ?? 'SKU-UNKNOWN';
   return {
     country: detail.country ?? order.country,
     createdAt: detail.createdAt ?? '2026-06-01 09:12:06',
@@ -638,8 +731,8 @@ function getOrderDetail(order) {
     reason: detail.reason ?? order.aiSuggestion,
     receiver: detail.receiver ?? '海外客户',
     store: detail.store ?? order.store,
-    skuName: detail.skuName ?? '关联商品',
-    skuCode: detail.skuCode ?? order.relatedSku ?? 'SKU-UNKNOWN',
+    skuName: skuProductNames[skuCode] ?? detail.skuName ?? '关联商品',
+    skuCode,
     availableStock: detail.availableStock ?? 0,
     inTransitStock: detail.inTransitStock ?? 0,
     aiTitle: detail.aiTitle ?? `建议处理${order.abnormalType}`,
