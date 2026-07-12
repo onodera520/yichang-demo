@@ -1,3 +1,5 @@
+import { buildCompletionPatch } from './trustLayer.js';
+
 const nowLabel = '刚刚';
 
 export function buildOrderTask(order) {
@@ -29,7 +31,7 @@ export function buildOrderTask(order) {
 }
 
 export function buildInventoryTask(sku, options = {}) {
-  const quantity = Number(options.quantity || sku.suggestedReplenishment || 120);
+  const quantity = Number(options.quantity ?? sku.suggestedReplenishment ?? 120);
 
   return {
     id: `task-inventory-${sku.sku}-${Date.now()}`,
@@ -92,35 +94,40 @@ export function buildSuggestionTask(suggestion, context = {}) {
   };
 }
 
-export function completeTaskState(state, taskId) {
+export function completeTaskState(state, taskId, completionEvidence) {
   const targetTask = state.tasks.find((task) => task.id === taskId);
   if (!targetTask) return state;
 
   const completedTask = {
     ...targetTask,
-    status: '已完成',
-    remainingSLA: '-',
-    processLogs: [
-      ...(targetTask.processLogs || []),
-      {
-        time: nowLabel,
-        owner: targetTask.owner || '系统',
-        action: '完成任务',
-        detail: '任务已完成，对应异常状态已同步',
-        tone: 'green',
-      },
-    ],
+    ...(completionEvidence
+      ? buildCompletionPatch(targetTask, completionEvidence)
+      : {
+          status: '已完成',
+          remainingSLA: '-',
+          processLogs: [
+            ...(targetTask.processLogs || []),
+            {
+              time: nowLabel,
+              owner: targetTask.owner || '系统',
+              action: '完成任务',
+              detail: '任务已完成，对应异常状态已同步',
+              tone: 'green',
+            },
+          ],
+        }),
   };
+  const shouldSyncSource = completionEvidence?.resolvedSource !== false;
 
   return {
     ...state,
     tasks: state.tasks.map((task) => (task.id === taskId ? completedTask : task)),
     orders:
-      targetTask.sourceKind === 'order'
+      targetTask.sourceKind === 'order' && shouldSyncSource
         ? state.orders.map((order) => (order.id === targetTask.sourceId ? { ...order, status: '已完成' } : order))
         : state.orders,
     inventory:
-      targetTask.sourceKind === 'inventory'
+      targetTask.sourceKind === 'inventory' && shouldSyncSource
         ? state.inventory.map((item) =>
             item.sku === targetTask.sourceId
               ? { ...item, status: '已完成', riskLevel: item.riskLevel === '高' ? '低' : item.riskLevel }

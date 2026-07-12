@@ -1,16 +1,10 @@
 import React, { useMemo, useState } from 'react';
 import { ChevronRight, HelpCircle, Plus, RefreshCw, Settings as SettingsIcon, X } from 'lucide-react';
+import PageHeaderActionButton from '../components/common/PageHeaderActionButton.jsx';
 import PlatformLogo from '../components/common/PlatformLogo.jsx';
 import { useToast } from '../components/common/Toast.jsx';
 import { settings } from '../data/mockData.js';
-
-const platformCards = [
-  { platform: 'Amazon', status: '已连接', note: '最后同步：1分钟前' },
-  { platform: 'TikTok Shop', status: '已连接', note: '最后同步：3分钟前' },
-  { platform: 'Shopee', status: '已连接', note: '最后同步：3分钟前' },
-  { platform: 'eBay', status: '已断开', note: '断开连接' },
-  { platform: 'Shopify', status: '待授权', note: '未授权' },
-];
+import { useDemoState } from '../state/DemoStateContext.jsx';
 
 const slaRules = [
   { rule: '缺货导致订单取消', threshold: '>5单/日', severity: '高', responseLimit: '30分钟' },
@@ -122,7 +116,7 @@ function ConnectModal({ onClose }) {
 
 export default function Settings() {
   const { showToast } = useToast();
-  const [connections, setConnections] = useState(platformCards);
+  const { platformConnections: connections, reconnectPlatform } = useDemoState();
   const [aiSettings, setAiSettings] = useState({
     enableSuggestion: settings.aiSettings.enableSuggestion,
     requireManualConfirmForHighRisk: settings.aiSettings.requireManualConfirmForHighRisk,
@@ -141,12 +135,13 @@ export default function Settings() {
   );
 
   const authorizeShopify = () => {
-    setConnections((current) =>
-      current.map((item) =>
-        item.platform === 'Shopify' ? { ...item, status: '已连接', note: '最后同步：刚刚' } : item,
-      ),
-    );
+    reconnectPlatform('Shopify');
     showToast({ message: 'Shopify 已连接' });
+  };
+
+  const reconnectDisconnectedPlatform = (platform) => {
+    reconnectPlatform(platform);
+    showToast({ message: `${platform} 已重新连接，数据同步已恢复`, type: 'success' });
   };
 
   const showActionToast = (action) => {
@@ -157,14 +152,13 @@ export default function Settings() {
     <div className="flex h-[calc(100vh-104px)] min-h-[720px] flex-col gap-4">
       <div className="page-header flex shrink-0 items-center justify-between">
         <h1 className="page-title">系统设置</h1>
-        <button
-          className="flex h-10 items-center gap-2 rounded-[8px] bg-[#2F7BFF] px-5 text-sm font-medium text-white shadow-[0_8px_16px_rgba(47,123,255,0.22)]"
+        <PageHeaderActionButton
+          icon={SettingsIcon}
           onClick={() => showToast({ message: '设置已保存' })}
-          type="button"
+          variant="primary"
         >
-          <SettingsIcon className="h-4 w-4" />
           保存设置
-        </button>
+        </PageHeaderActionButton>
       </div>
 
       <div className="flex min-h-0 flex-1 gap-4">
@@ -195,17 +189,27 @@ export default function Settings() {
                       <span className={`h-2.5 w-2.5 rounded-full ${dotClasses(item.status)}`} />
                       <span className={`rounded-full px-3 py-1 text-xs font-medium ${statusClasses(item.status)}`}>{item.status}</span>
                     </div>
-                    <div className="mt-4 h-5 whitespace-nowrap text-xs text-[#7A879B]">{item.note}</div>
+                    <div className="mt-4 h-5 max-w-full truncate text-xs text-[#7A879B]">{item.description || item.note}</div>
                     <button
                       className={`mt-auto h-10 w-full rounded-[10px] border text-sm font-medium ${
-                        item.platform === 'Shopify' && item.status !== '已连接'
+                        item.status !== '已连接'
                           ? 'border-[#2F7BFF] text-[#2F7BFF]'
                           : 'border-[#9AA5B5] text-[#5F6B7A]'
                       }`}
-                      onClick={item.platform === 'Shopify' && item.status !== '已连接' ? authorizeShopify : () => showActionToast('查看详情')}
+                      onClick={
+                        item.platform === 'Shopify' && item.status !== '已连接'
+                          ? authorizeShopify
+                          : item.status === '已断开'
+                            ? () => reconnectDisconnectedPlatform(item.platform)
+                            : () => showActionToast('查看详情')
+                      }
                       type="button"
                     >
-                      {item.platform === 'Shopify' && item.status !== '已连接' ? '去授权' : '查看详情'}
+                      {item.platform === 'Shopify' && item.status !== '已连接'
+                        ? '去授权'
+                        : item.status === '已断开'
+                          ? '重新连接'
+                          : '查看详情'}
                     </button>
                   </article>
                 ))}

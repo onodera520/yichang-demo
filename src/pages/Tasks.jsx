@@ -18,8 +18,10 @@ import {
   X,
 } from 'lucide-react';
 import FilterSelect from '../components/common/FilterSelect.jsx';
+import PageHeaderActionButton from '../components/common/PageHeaderActionButton.jsx';
 import RiskTag from '../components/common/RiskTag.jsx';
 import SlaCountdown from '../components/common/SlaCountdown.jsx';
+import TaskCompletionModal from '../components/common/TaskCompletionModal.jsx';
 import LiveUpdateTime from '../components/LiveUpdateTime.jsx';
 import { useToast } from '../components/common/Toast.jsx';
 import { tasks as mockTasks } from '../data/mockData.js';
@@ -28,6 +30,7 @@ import { useSlaClock } from '../hooks/useSlaClock.js';
 import { useDemoState } from '../state/DemoStateContext.jsx';
 import { useTopbarFilter } from '../state/TopbarFilterContext.jsx';
 import { getRemainingSlaSeconds } from '../utils/sla.js';
+import { buildCompletionPatch, hasTaskSource } from '../state/trustLayer.js';
 
 const tabs = ['全部', '待分派', '已分派', '处理中', '待确认', '已完成', '已超时', '已升级'];
 const owners = ['王敏', '赵宁', '陈浩', '刘畅', '周扬', '张磊', '李娜', '未分派'];
@@ -350,13 +353,27 @@ function DetailPanel({ task, onComplete, onUpgrade, onTransfer, slaClock }) {
         <p className="text-sm leading-6 text-[#5F6B7A]">{task.description}</p>
         <p className="mt-3 text-sm text-[#5F6B7A]">{task.impact}</p>
       </div>
+      {task.completionEvidence ? (
+        <div className="border-b border-[#E6EAF2] py-3">
+          <h3 className="mb-2 text-[16px] font-semibold text-[#111827]">完成凭证</h3>
+          <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
+            <EvidenceItem label="处理结果" value={task.completionEvidence.result} wide />
+            <EvidenceItem label="执行说明" value={task.completionEvidence.description} wide />
+            <EvidenceItem label="原异常" value={task.completionEvidence.resolvedSource ? '已解决' : '未解决'} />
+            <EvidenceItem label="关联单号" value={task.completionEvidence.referenceNo || '-'} />
+            <EvidenceItem label="执行数量" value={task.completionEvidence.quantity || '-'} />
+            <EvidenceItem label="实际成本" value={task.completionEvidence.cost ? `¥${task.completionEvidence.cost}` : '-'} />
+            <EvidenceItem label="附件" value={task.completionEvidence.attachment?.name || '-'} wide />
+          </div>
+        </div>
+      ) : null}
       <div className="py-3">
         <div className="mb-3 flex items-center justify-between">
           <h3 className="text-[16px] font-semibold text-[#111827]">处理记录</h3>
           <button className="text-[13px] text-[#7889A8]" type="button">查看全部记录</button>
         </div>
         <div className="space-y-3">
-          {task.processLogs.slice(0, 3).map((log, index) => (
+          {task.processLogs.slice(-3).map((log, index) => (
             <div key={`${log.time}-${log.action}-${index}`} className="grid gap-2 text-[13px]" style={{ gridTemplateColumns: '18px 78px 66px minmax(0, 1fr)' }}>
               <span className={`mt-1.5 h-2.5 w-2.5 rounded-full ${logDotClass(log.tone)}`} />
               <span className="text-[#7889A8]">{log.time}</span>
@@ -370,9 +387,25 @@ function DetailPanel({ task, onComplete, onUpgrade, onTransfer, slaClock }) {
         <ActionButton onClick={onTransfer}>转交</ActionButton>
         <ActionButton>退回</ActionButton>
         <ActionButton danger onClick={onUpgrade}>升级主管</ActionButton>
-        <button className="h-10 rounded-[6px] bg-[#2F7BFF] text-[13px] font-semibold text-white" onClick={onComplete} type="button">完成任务</button>
+        <button
+          className="h-10 rounded-[6px] bg-[#2F7BFF] text-[13px] font-semibold text-white disabled:cursor-not-allowed disabled:bg-[#AFCBFF]"
+          disabled={task.status === '已完成'}
+          onClick={onComplete}
+          type="button"
+        >
+          {task.status === '已完成' ? '已完成' : '完成任务'}
+        </button>
       </div>
     </section>
+  );
+}
+
+function EvidenceItem({ label, value, wide = false }) {
+  return (
+    <div className={wide ? 'col-span-2' : ''}>
+      <span className="text-[#8A98B3]">{label}：</span>
+      <span className="break-words font-medium text-[#344767]">{value}</span>
+    </div>
   );
 }
 
@@ -439,7 +472,7 @@ function TransferModal({ open, task, owner, onOwnerChange, onClose, onConfirm })
 export default function Tasks() {
   const location = useLocation();
   const { showToast } = useToast();
-  const { completeTask: completeGeneratedTask, generatedTasks, updateGeneratedTask } = useDemoState();
+  const { completeTask: completeGeneratedTask, generatedTasks, inventory, orders, updateGeneratedTask } = useDemoState();
   const { keyword: topbarKeyword } = useTopbarFilter();
   const { refreshTime, refreshNow } = useRefreshTime();
   const slaClock = useSlaClock();
@@ -451,6 +484,7 @@ export default function Tasks() {
   const [transferOpen, setTransferOpen] = useState(false);
   const [transferOwner, setTransferOwner] = useState('王敏');
   const [currentPage, setCurrentPage] = useState(1);
+  const [completionOpen, setCompletionOpen] = useState(false);
 
   const allTaskRows = useMemo(() => [...generatedTasks, ...taskRows], [generatedTasks, taskRows]);
 
@@ -490,7 +524,25 @@ export default function Tasks() {
     setTaskRows((current) => current.map((task) => (task.id === selectedTask.id ? applyPatch(task) : task)));
     showToast({ message: toastMessage, type: patch.status === '已升级' ? 'info' : 'success' });
   };
-  const completeTask = () => { if (selectedTask?.sourceKind) { completeGeneratedTask(selectedTask.id); showToast({ message: '任务已完成，对应异常状态已同步', type: 'success' }); return; } updateTask({ status: '已完成', remainingSLA: '-' }, '任务已完成'); };
+  const submitCompletion = (evidence) => {
+    if (!selectedTask) return;
+    if (selectedTask.sourceKind) {
+      const sourceExists = hasTaskSource(selectedTask, orders, inventory);
+      if (!sourceExists) {
+        showToast({ message: '来源对象未同步，暂时无法完成任务', type: 'error' });
+        return;
+      }
+      completeGeneratedTask(selectedTask.id, evidence);
+      setCompletionOpen(false);
+      showToast({ message: evidence.resolvedSource ? '任务已完成，对应异常状态已同步' : '任务已完成，原异常保持处理中', type: 'success' });
+      return;
+    }
+    setTaskRows((current) => current.map((task) => (
+      task.id === selectedTask.id ? { ...task, ...buildCompletionPatch(task, evidence) } : task
+    )));
+    setCompletionOpen(false);
+    showToast({ message: '任务已完成，处理凭证已记录', type: 'success' });
+  };
   const upgradeTask = () => { updateTask({ status: '已升级' }, '已升级主管'); };
   const confirmTransfer = () => {
     if (!selectedTask) return;
@@ -505,16 +557,23 @@ export default function Tasks() {
 
   return (
     <div className="flex h-[calc(100vh-104px)] min-h-[760px] flex-col">
-      <header className="page-header mb-4 flex shrink-0 items-center justify-between"><h1 className="page-title">任务协同</h1><div className="flex items-center gap-4"><LiveUpdateTime className="text-sm text-[#8A98B3]" value={refreshTime} /><button className="inline-flex h-10 items-center gap-2 rounded-[9px] border border-[#E2E8F0] bg-white px-4 text-sm font-medium text-[#1D273B] shadow-[0_3px_10px_rgba(28,39,71,0.04)]" onClick={refreshNow} type="button"><RefreshCw className="h-4 w-4" />刷新数据</button></div></header>
+      <header className="page-header mb-4 flex shrink-0 items-center justify-between">
+        <h1 className="page-title">任务协同</h1>
+        <div className="flex items-center gap-4">
+          <LiveUpdateTime className="text-sm text-[#8A98B3]" value={refreshTime} />
+          <PageHeaderActionButton icon={RefreshCw} onClick={refreshNow}>刷新数据</PageHeaderActionButton>
+        </div>
+      </header>
       <div className="grid min-h-0 flex-1 gap-4" style={{ gridTemplateColumns: 'minmax(0, 1fr) 405px' }}>
         <div className="flex min-h-0 flex-col">
           <nav className="mb-3 flex shrink-0 items-center" style={{ columnGap: 56 }}>{tabs.map((tab) => (<button key={tab} className={`relative h-9 text-[15px] font-medium ${activeTab === tab ? 'text-[#2F7BFF]' : 'text-[#1D273B]'}`} onClick={() => setActiveTab(tab)} type="button">{tab}{activeTab === tab ? <span className="absolute bottom-0 left-0 h-1 w-8 rounded-full bg-[#2F7BFF]" /> : null}</button>))}</nav>
           <section className="mb-4 flex shrink-0 items-end gap-7"><FilterBox label="负责人" value={filters.owner} options={['全部', ...owners]} onChange={(value) => setFilters((current) => ({ ...current, owner: value }))} /><FilterBox label="异常来源" value={filters.source} options={sources} onChange={(value) => setFilters((current) => ({ ...current, source: value }))} /><FilterBox label="风险等级" value={filters.risk} options={risks} onChange={(value) => setFilters((current) => ({ ...current, risk: value }))} /><DeadlineFilter value={filters.deadline} onChange={(value) => setFilters((current) => ({ ...current, deadline: value }))} /><div className="flex flex-col"><span aria-hidden="true" className="mb-1.5 block h-5" /><button className="h-10 min-w-[104px] rounded-[7px] border border-[#D7DEE9] bg-white px-7 text-sm font-semibold text-[#263246]" type="button">更多筛选</button></div><div className="flex flex-col"><span aria-hidden="true" className="mb-1.5 block h-5" /><button className="h-10 min-w-[76px] rounded-[7px] border border-[#D7DEE9] bg-white px-7 text-sm font-semibold text-[#263246]" onClick={resetFilters} type="button">重置</button></div></section>
           <TaskTable rows={pagedTasks} selectedTaskId={selectedTask?.id} selectedIds={selectedIds} onSelectTask={setSelectedTaskId} onToggleSelected={(id) => setSelectedIds((current) => (current.includes(id) ? current.filter((item) => item !== id) : [...current, id]))} onToggleAll={toggleAll} allSelected={allSelected} totalCount={filteredTasks.length} currentPage={safePage} pageCount={pageCount} visiblePages={visiblePages} onPageChange={setCurrentPage} slaClock={slaClock} />
         </div>
-        <aside className="flex min-h-0 flex-col gap-3 overflow-y-auto pr-1"><DetailPanel task={selectedTask} onComplete={completeTask} onUpgrade={upgradeTask} onTransfer={() => { setTransferOwner(selectedTask?.owner && selectedTask.owner !== '未分派' ? selectedTask.owner : '王敏'); setTransferOpen(true); }} slaClock={slaClock} /><DeadlineStats /><TeamOverview /></aside>
+        <aside className="flex min-h-0 flex-col gap-3 overflow-y-auto pr-1"><DetailPanel task={selectedTask} onComplete={() => setCompletionOpen(true)} onUpgrade={upgradeTask} onTransfer={() => { setTransferOwner(selectedTask?.owner && selectedTask.owner !== '未分派' ? selectedTask.owner : '王敏'); setTransferOpen(true); }} slaClock={slaClock} /><DeadlineStats /><TeamOverview /></aside>
       </div>
       <TransferModal open={transferOpen} task={selectedTask} owner={transferOwner} onOwnerChange={setTransferOwner} onClose={() => setTransferOpen(false)} onConfirm={confirmTransfer} />
+      <TaskCompletionModal open={completionOpen} task={selectedTask} onClose={() => setCompletionOpen(false)} onSubmit={submitCompletion} />
     </div>
   );
 }

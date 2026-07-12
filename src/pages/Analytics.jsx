@@ -14,6 +14,7 @@ import {
   YAxis,
 } from 'recharts';
 import FilterSelect from '../components/common/FilterSelect.jsx';
+import PageHeaderActionButton from '../components/common/PageHeaderActionButton.jsx';
 import PlatformLogo from '../components/common/PlatformLogo.jsx';
 import LiveUpdateTime from '../components/LiveUpdateTime.jsx';
 import { useToast } from '../components/common/Toast.jsx';
@@ -471,14 +472,8 @@ export default function Analytics() {
         <h1 className="page-title">数据复盘</h1>
         <div className="flex items-center gap-3">
           <LiveUpdateTime className="text-sm text-[#7889A8]" value={refreshTime} />
-          <button className="flex h-9 items-center gap-2 rounded-[9px] border border-[#D7DEE9] bg-white px-4 text-sm text-[#1D273B]" onClick={refreshNow} type="button">
-            <RefreshCw className="h-4 w-4" />
-            刷新数据
-          </button>
-          <button className="flex h-9 items-center gap-2 rounded-[9px] bg-[#2F7BFF] px-4 text-sm font-medium text-white shadow-[0_8px_18px_rgba(47,123,255,0.24)]" onClick={exportReport} type="button">
-            <Download className="h-4 w-4" />
-            导出报表
-          </button>
+          <PageHeaderActionButton icon={RefreshCw} onClick={refreshNow}>刷新数据</PageHeaderActionButton>
+          <PageHeaderActionButton icon={Download} onClick={exportReport} variant="primary">导出报表</PageHeaderActionButton>
         </div>
       </div>
 

@@ -12,9 +12,14 @@ import {
   UserRound,
 } from 'lucide-react';
 import DetailDrawer from '../components/common/DetailDrawer.jsx';
+import AiEvidencePanel from '../components/common/AiEvidencePanel.jsx';
+import ConfirmActionDialog from '../components/common/ConfirmActionDialog.jsx';
+import DataFreshnessNotice from '../components/common/DataFreshnessNotice.jsx';
 import FilterSelect from '../components/common/FilterSelect.jsx';
+import PageHeaderActionButton from '../components/common/PageHeaderActionButton.jsx';
 import PlatformLogo from '../components/common/PlatformLogo.jsx';
 import RiskTag from '../components/common/RiskTag.jsx';
+import RiskExplanationPopover from '../components/common/RiskExplanationPopover.jsx';
 import SlaCountdown from '../components/common/SlaCountdown.jsx';
 import LiveUpdateTime from '../components/LiveUpdateTime.jsx';
 import productPhoneStandImage from '../assets/products/acc-phone-stand.png';
@@ -31,6 +36,7 @@ import { useSlaClock } from '../hooks/useSlaClock.js';
 import { useDemoState } from '../state/DemoStateContext.jsx';
 import { useTopbarFilter } from '../state/TopbarFilterContext.jsx';
 import { getRemainingSlaSeconds } from '../utils/sla.js';
+import { requiresStaleDataConfirmation } from '../state/trustLayer.js';
 
 const tabs = ['全部', '地址异常', '缺货', '物流延误', '平台同步失败', '支付异常', '退款', '清关异常'];
 const defaultSelected = ['order-001', 'order-002', 'order-008'];
@@ -120,7 +126,7 @@ export default function Orders() {
   const navigate = useNavigate();
   const location = useLocation();
   const { showToast } = useToast();
-  const { createOrderTask, orders: rows, updateOrderStatus } = useDemoState();
+  const { createOrderTask, orders: rows, platformConnections, updateOrderStatus } = useDemoState();
   const { keyword: topbarKeyword, platform: topbarPlatform, store: topbarStore } = useTopbarFilter();
   const { refreshTime, refreshNow } = useRefreshTime();
   const slaClock = useSlaClock();
@@ -130,6 +136,7 @@ export default function Orders() {
   const [drawerOrderId, setDrawerOrderId] = useState(null);
   const [actionOpen, setActionOpen] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
+  const [pendingAction, setPendingAction] = useState(null);
 
   useEffect(() => {
     if (location.state?.abnormalType) {
@@ -226,9 +233,13 @@ export default function Orders() {
   };
 
   const handleAdoptSuggestion = (orderId) => {
-    updateOrderStatus(orderId, '处理中');
-    setActionOpen(false);
-    showToast({ message: '已采纳建议，订单状态已更新为处理中', type: 'success' });
+    const order = rows.find((item) => item.id === orderId);
+    if (!order) return;
+    requestOrderAction(order, '采纳 AI 建议', () => {
+      updateOrderStatus(orderId, '处理中');
+      setActionOpen(false);
+      showToast({ message: '已采纳建议，订单状态已更新为处理中', type: 'success' });
+    });
   };
 
   const handleRejectSuggestion = (orderId) => {
@@ -244,9 +255,30 @@ export default function Orders() {
 
   const handleGenerateTask = () => {
     if (!drawerOrder) return;
-    const task = createOrderTask(drawerOrder);
-    showToast({ message: '已生成任务', type: 'success' });
-    navigate('/tasks', { state: { highlightTaskId: task.id } });
+    requestOrderAction(drawerOrder, '生成协同任务', () => {
+      const task = createOrderTask(drawerOrder);
+      showToast({ message: '已生成任务', type: 'success' });
+      navigate('/tasks', { state: { highlightTaskId: task.id } });
+    });
+  };
+
+  const requestOrderAction = (order, label, execute) => {
+    const stale = requiresStaleDataConfirmation(order, platformConnections);
+    const highRisk = order.riskLevel === '高';
+    if (!stale && !highRisk) {
+      execute();
+      return;
+    }
+    const connection = platformConnections.find((item) => item.platform === order.platform);
+    setPendingAction({
+      title: `确认${label}`,
+      description: `即将对订单 ${order.orderNo} 执行“${label}”。`,
+      warnings: [
+        ...(highRisk ? ['该订单为高风险异常，请确认已核对 AI 判断依据。'] : []),
+        ...(stale ? [`${order.platform} 数据已停止同步，最后成功同步：${connection?.lastSuccessfulSync || '未知'}。`] : []),
+      ],
+      execute,
+    });
   };
 
   const openDrawer = (row) => {
@@ -254,20 +286,16 @@ export default function Orders() {
     setActionOpen(false);
   };
 
+  const drawerConnection = platformConnections.find((item) => item.platform === drawerOrder?.platform);
+
   return (
+    <>
     <div className="orders-page flex flex-col">
       <header className="page-header mb-5 flex shrink-0 items-center justify-between">
         <h1 className="page-title">订单异常</h1>
         <div className="flex items-center gap-4">
           <LiveUpdateTime className="text-sm text-[#8A98B3]" value={refreshTime} />
-          <button
-            className="inline-flex h-10 items-center gap-2 rounded-[9px] border border-[#E2E8F0] bg-white px-4 text-sm font-medium text-[#1D273B] shadow-[0_3px_10px_rgba(28,39,71,0.04)]"
-            onClick={refreshNow}
-            type="button"
-          >
-            <RefreshCw className="h-4 w-4" />
-            刷新数据
-          </button>
+          <PageHeaderActionButton icon={RefreshCw} onClick={refreshNow}>刷新数据</PageHeaderActionButton>
         </div>
       </header>
 
@@ -376,7 +404,7 @@ export default function Orders() {
                       <Checkbox checked={selected} onChange={() => toggleRow(row.id)} />
                     </td>
                     <td>
-                      <RiskTag type={row.riskLevel}>{row.riskLevel}</RiskTag>
+                      <RiskExplanationPopover level={row.riskLevel} explanation={row.riskExplanation} />
                     </td>
                     <td className="truncate">{row.abnormalType}</td>
                     <td className="truncate">
@@ -488,9 +516,23 @@ export default function Orders() {
         onModifyPurchase={handleModifyPurchase}
         onRejectSuggestion={handleRejectSuggestion}
         order={drawerOrder}
+        connection={drawerConnection}
         slaClock={slaClock}
       />
     </div>
+    <ConfirmActionDialog
+      open={Boolean(pendingAction)}
+      title={pendingAction?.title}
+      description={pendingAction?.description}
+      warnings={pendingAction?.warnings}
+      onCancel={() => setPendingAction(null)}
+      onConfirm={() => {
+        const execute = pendingAction?.execute;
+        setPendingAction(null);
+        execute?.();
+      }}
+    />
+    </>
   );
 }
 
@@ -576,6 +618,7 @@ function OrderDetailDrawer({
   onModifyPurchase,
   onRejectSuggestion,
   order,
+  connection,
   slaClock,
 }) {
   const detail = useMemo(() => getOrderDetail(order), [order]);
@@ -622,12 +665,13 @@ function OrderDetailDrawer({
       onClose={onClose}
       open={Boolean(order)}
       title="订单异常详情"
-      titleExtra={order ? <RiskTag type={order.riskLevel}>{order.riskLevel}风险</RiskTag> : null}
+      titleExtra={order ? <RiskExplanationPopover level={order.riskLevel} explanation={order.riskExplanation} /> : null}
       topOffset={64}
       width={450}
     >
       {order ? (
         <div className="space-y-4 pb-2">
+          <DataFreshnessNotice connection={connection} />
           <DrawerSection title="订单信息">
             <InfoRow label="订单编号" value={order.orderNo} />
             <InfoRow label="平台 / 店铺" value={`${order.platform} / ${detail.store}`} />
@@ -694,6 +738,7 @@ function OrderDetailDrawer({
               <div className="shrink-0 text-sm font-semibold text-[#FF1F1F]">置信度 {Math.round((order.confidence || 0) * 100)}%</div>
             </div>
             <p className="pt-1 text-sm leading-6 text-[#5F6B7A]">{detail.aiDescription}</p>
+            <AiEvidencePanel evidence={order.aiEvidence} connection={connection} className="mt-3" />
           </DrawerSection>
 
           <DrawerSection title="结果预估">

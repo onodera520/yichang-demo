@@ -18,8 +18,13 @@ import {
   YAxis,
 } from 'recharts';
 import DetailDrawer from '../components/common/DetailDrawer.jsx';
+import AiEvidencePanel from '../components/common/AiEvidencePanel.jsx';
+import ConfirmActionDialog from '../components/common/ConfirmActionDialog.jsx';
+import DataFreshnessNotice from '../components/common/DataFreshnessNotice.jsx';
 import FilterSelect from '../components/common/FilterSelect.jsx';
+import PageHeaderActionButton from '../components/common/PageHeaderActionButton.jsx';
 import PlatformLogo from '../components/common/PlatformLogo.jsx';
+import RiskExplanationPopover from '../components/common/RiskExplanationPopover.jsx';
 import LiveUpdateTime from '../components/LiveUpdateTime.jsx';
 import { useToast } from '../components/common/Toast.jsx';
 import { useRefreshTime } from '../hooks/useRefreshTime.js';
@@ -38,6 +43,7 @@ import productBottleImage from '../assets/products/out-wb-01.png';
 import productPetFeederImage from '../assets/products/pet-feed-02.png';
 import { useDemoState } from '../state/DemoStateContext.jsx';
 import { useTopbarFilter } from '../state/TopbarFilterContext.jsx';
+import { getReplenishmentQuantity, requiresStaleDataConfirmation } from '../state/trustLayer.js';
 
 const metricCards = [
   {
@@ -247,7 +253,7 @@ function RiskBadge({ level }) {
 
 function suggestionSummary(row) {
   if (row.riskLevel === '高' || row.riskLevel === '中') {
-    return `补货${row.suggestedReplenishment || 100}件`;
+    return `补货${row.suggestedReplenishment ?? 100}件`;
   }
   if (row.riskLevel === '滞销') return '促销清库存';
   if (row.riskLevel === '调拨') return row.warehouse === 'UK' ? '调拨至LA仓' : `调拨至${row.warehouse}仓`;
@@ -265,7 +271,7 @@ export default function Inventory() {
   const navigate = useNavigate();
   const location = useLocation();
   const { showToast } = useToast();
-  const { createInventoryTask, inventory } = useDemoState();
+  const { createInventoryTask, inventory, platformConnections } = useDemoState();
   const { keyword: topbarKeyword, platform: topbarPlatform } = useTopbarFilter();
   const { refreshTime, refreshNow } = useRefreshTime();
   const [filters, setFilters] = useState({
@@ -279,6 +285,7 @@ export default function Inventory() {
   const [adjustReason, setAdjustReason] = useState('覆盖安全库存');
   const [adjustNote, setAdjustNote] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
+  const [pendingAction, setPendingAction] = useState(null);
 
   useEffect(() => {
     if (!location.state?.openSku) return;
@@ -347,7 +354,7 @@ export default function Inventory() {
   const applyMetricFilter = (filter) => setFilters((current) => ({ ...current, ...filter }));
   const openSkuDrawer = (row) => {
     setSelectedSku(row);
-    setAdjustedQuantity(String(row.suggestedReplenishment || 300));
+    setAdjustedQuantity(String(getReplenishmentQuantity(row)));
     setAdjustReason('覆盖安全库存');
     setAdjustNote('');
   };
@@ -361,10 +368,34 @@ export default function Inventory() {
   const handleRejectSuggestion = () => showToast({ message: '已驳回AI建议', type: 'info' });
   const handleCreateTask = () => {
     if (!selectedSku) return;
-    const task = createInventoryTask(selectedSku, { quantity: adjustedQuantity });
-    showToast({ message: '补货任务已创建', type: 'success' });
-    navigate('/tasks', { state: { detailTaskId: task.id, highlightTaskId: task.id } });
+    if (Number(adjustedQuantity) <= 0) {
+      showToast({ message: '补货数量必须大于 0', type: 'error' });
+      return;
+    }
+    const stale = requiresStaleDataConfirmation(selectedSku, platformConnections);
+    const highRisk = selectedSku.riskLevel === '高';
+    const execute = () => {
+      const task = createInventoryTask(selectedSku, { quantity: adjustedQuantity });
+      showToast({ message: '补货任务已创建', type: 'success' });
+      navigate('/tasks', { state: { detailTaskId: task.id, highlightTaskId: task.id } });
+    };
+    if (!stale && !highRisk) {
+      execute();
+      return;
+    }
+    const connection = platformConnections.find((item) => item.platform === selectedSku.platform);
+    setPendingAction({
+      title: '确认创建补货任务',
+      description: `即将为 ${selectedSku.sku} 创建补货 ${adjustedQuantity} 件的协同任务。`,
+      warnings: [
+        ...(highRisk ? ['该 SKU 为高风险库存，请确认已核对补货公式和 AI 判断依据。'] : []),
+        ...(stale ? [`${selectedSku.platform} 数据已停止同步，最后成功同步：${connection?.lastSuccessfulSync || '未知'}。`] : []),
+      ],
+      execute,
+    });
   };
+
+  const selectedConnection = platformConnections.find((item) => item.platform === selectedSku?.platform);
 
   return (
     <>
@@ -373,14 +404,7 @@ export default function Inventory() {
           <h1 className="page-title">库存决策</h1>
           <div className="flex items-center gap-4">
             <LiveUpdateTime className="text-sm text-[#7889A8]" value={refreshTime} />
-            <button
-              className="flex h-9 items-center gap-2 rounded-[9px] border border-[#DDE4F0] bg-white px-3 text-sm font-medium text-[#1D273B] shadow-[0_4px_10px_rgba(28,39,71,0.04)]"
-              onClick={refreshNow}
-              type="button"
-            >
-              <RefreshCw className="h-4 w-4" />
-              刷新数据
-            </button>
+            <PageHeaderActionButton icon={RefreshCw} onClick={refreshNow}>刷新数据</PageHeaderActionButton>
           </div>
         </header>
 
@@ -484,7 +508,9 @@ export default function Inventory() {
                     }`}
                   >
                     <td className="pl-2">
-                      <RiskBadge level={row.riskLevel} />
+                      <RiskExplanationPopover level={row.riskLevel} explanation={row.riskExplanation}>
+                        <RiskBadge level={row.riskLevel} />
+                      </RiskExplanationPopover>
                     </td>
                     <td>
                       <button
@@ -583,7 +609,11 @@ export default function Inventory() {
       <DetailDrawer
         open={Boolean(selectedSku)}
         title={selectedSku ? `SKU详情 - ${selectedSku.sku}` : 'SKU详情'}
-        titleExtra={selectedSku ? <RiskBadge level={selectedSku.riskLevel} /> : null}
+        titleExtra={selectedSku ? (
+          <RiskExplanationPopover level={selectedSku.riskLevel} explanation={selectedSku.riskExplanation}>
+            <RiskBadge level={selectedSku.riskLevel} />
+          </RiskExplanationPopover>
+        ) : null}
         onClose={() => setSelectedSku(null)}
         width={380}
         topOffset={64}
@@ -615,23 +645,40 @@ export default function Inventory() {
         }
       >
         {selectedSku ? (
-          <SkuDetailDrawerContent
-            selectedSku={selectedSku}
-            adjustedQuantity={adjustedQuantity}
-            adjustReason={adjustReason}
-            adjustNote={adjustNote}
-            setAdjustedQuantity={setAdjustedQuantity}
-            setAdjustReason={setAdjustReason}
-            setAdjustNote={setAdjustNote}
-          />
+          <div className="space-y-3">
+            <DataFreshnessNotice connection={selectedConnection} />
+            <SkuDetailDrawerContent
+              selectedSku={selectedSku}
+              connection={selectedConnection}
+              adjustedQuantity={adjustedQuantity}
+              adjustReason={adjustReason}
+              adjustNote={adjustNote}
+              setAdjustedQuantity={setAdjustedQuantity}
+              setAdjustReason={setAdjustReason}
+              setAdjustNote={setAdjustNote}
+            />
+          </div>
         ) : null}
       </DetailDrawer>
+      <ConfirmActionDialog
+        open={Boolean(pendingAction)}
+        title={pendingAction?.title}
+        description={pendingAction?.description}
+        warnings={pendingAction?.warnings}
+        onCancel={() => setPendingAction(null)}
+        onConfirm={() => {
+          const execute = pendingAction?.execute;
+          setPendingAction(null);
+          execute?.();
+        }}
+      />
     </>
   );
 }
 
 function SkuDetailDrawerContent({
   selectedSku,
+  connection,
   adjustedQuantity,
   adjustReason,
   adjustNote,
@@ -643,8 +690,9 @@ function SkuDetailDrawerContent({
   const productName = detail.displayName ?? productNameOverrides[selectedSku.sku] ?? selectedSku.productName;
   const warehouse = detail.warehouseName ?? `${selectedSku.warehouse}仓`;
   const productImage = getSkuProductImage(selectedSku.sku, productName);
-  const replenishment = selectedSku.suggestedReplenishment || 300;
+  const replenishment = getReplenishmentQuantity(selectedSku);
   const confidence = Math.round((selectedSku.confidence || 0.8) * 100);
+  const planning = selectedSku.inventoryPlanning ?? {};
   const salesTrend = detail.salesTrend ?? skuSalesTrend;
   const metrics = [
     { label: '当前库存', value: `${selectedSku.currentStock}件`, tone: redIfLow(selectedSku, 'currentStock') ? 'text-[#F04438]' : 'text-[#1D273B]' },
@@ -696,6 +744,22 @@ function SkuDetailDrawerContent({
         </div>
         <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-[#E6EAF2]">
           <div className="h-full rounded-full bg-[#2F7BFF]" style={{ width: `${confidence}%` }} />
+        </div>
+      </section>
+
+      <AiEvidencePanel evidence={selectedSku.aiEvidence} connection={connection} />
+
+      <section className="rounded-[14px] border border-[#E6EAF2] bg-white p-3">
+        <h3 className="text-sm font-semibold text-[#1D273B]">库存计算口径</h3>
+        <div className="mt-3 space-y-2 text-xs leading-5 text-[#5F6B7A]">
+          <div className="flex justify-between gap-3"><span>有效在途 / 安全库存</span><span className="font-semibold text-[#1D273B]">{planning.effectiveTransitStock} / {planning.safetyStock} 件</span></div>
+          <div className="flex justify-between gap-3"><span>预测周期 / 箱规</span><span className="font-semibold text-[#1D273B]">{Number(planning.targetDays || 0).toFixed(1)} 天 / {planning.packSize} 件</span></div>
+          <div className="rounded-[8px] bg-[#F5F7FB] px-3 py-2 text-[#344767]">
+            可售天数 =（{selectedSku.currentStock} + {planning.effectiveTransitStock} - {planning.safetyStock}）÷ {selectedSku.dailySales} = <strong>{selectedSku.availableDays} 天</strong>
+          </div>
+          <div className="rounded-[8px] bg-[#F5F7FB] px-3 py-2 text-[#344767]">
+            补货量按目标周期缺口计算，并按 {planning.packSize} 件箱规向上取整 = <strong>{replenishment} 件</strong>
+          </div>
         </div>
       </section>
 

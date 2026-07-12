@@ -37,6 +37,14 @@ assert.equal(inventoryTask.sourceId, 'ELE-HEAD-01');
 assert.equal(inventoryTask.sourceKind, 'inventory');
 assert.equal(inventoryTask.source, 'ELE-HEAD-01');
 assert.equal(inventoryTask.status, '待分派');
+assert.equal(buildInventoryTask({ ...sku, suggestedReplenishment: 0 }, { quantity: 0 }).impact.includes('补货 0 件'), true);
+
+const completionEvidence = {
+  result: '已从 NJ 仓重新分配库存',
+  description: '已同步平台并复核订单状态',
+  resolvedSource: true,
+  referenceNo: 'NJ-OUT-260601-032',
+};
 
 const completedOrderState = completeTaskState(
   {
@@ -45,8 +53,11 @@ const completedOrderState = completeTaskState(
     tasks: [{ ...orderTask, status: '处理中' }],
   },
   orderTask.id,
+  completionEvidence,
 );
 assert.equal(completedOrderState.tasks[0].status, '已完成');
+assert.deepEqual(completedOrderState.tasks[0].completionEvidence, completionEvidence);
+assert.match(completedOrderState.tasks[0].processLogs.at(-1).detail, /NJ-OUT-260601-032/);
 assert.equal(completedOrderState.orders[0].status, '已完成');
 assert.equal(completedOrderState.inventory[0].status, '待补货');
 
@@ -57,10 +68,23 @@ const completedInventoryState = completeTaskState(
     tasks: [{ ...inventoryTask, status: '处理中' }],
   },
   inventoryTask.id,
+  completionEvidence,
 );
 assert.equal(completedInventoryState.tasks[0].status, '已完成');
 assert.equal(completedInventoryState.inventory[0].status, '已完成');
 assert.equal(completedInventoryState.orders[0].status, '处理中');
+
+const unresolvedOrderState = completeTaskState(
+  {
+    orders: [{ ...order, status: '处理中' }],
+    inventory: [{ ...sku, status: '待补货' }],
+    tasks: [{ ...orderTask, status: '处理中' }],
+  },
+  orderTask.id,
+  { ...completionEvidence, resolvedSource: false },
+);
+assert.equal(unresolvedOrderState.tasks[0].status, '已完成');
+assert.equal(unresolvedOrderState.orders[0].status, '处理中');
 
 const suggestions = [
   {

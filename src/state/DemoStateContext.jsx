@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useMemo, useState } from 'react';
-import { inventory as mockInventory, orders as mockOrders } from '../data/mockData.js';
+import { inventory as mockInventory, orders as mockOrders, settings as mockSettings } from '../data/mockData.js';
 import { buildInventoryTask, buildOrderTask, buildSuggestionTask, completeTaskState } from './demoFlow.js';
+import { reconnectPlatformConnections } from './trustLayer.js';
 
 const DemoStateContext = createContext(null);
 
@@ -10,6 +11,9 @@ export function DemoStateProvider({ children }) {
     mockInventory.map((item) => ({ ...item, status: item.status || '待处理' })),
   );
   const [generatedTasks, setGeneratedTasks] = useState([]);
+  const [platformConnections, setPlatformConnections] = useState(() =>
+    mockSettings.platformConnections.map((connection) => ({ ...connection })),
+  );
 
   const updateOrderStatus = (orderId, status) => {
     setOrders((current) => current.map((order) => (order.id === orderId ? { ...order, status } : order)));
@@ -53,12 +57,16 @@ export function DemoStateProvider({ children }) {
     );
   };
 
-  const completeTask = (taskId) => {
-    const nextState = completeTaskState({ orders, inventory, tasks: generatedTasks }, taskId);
+  const completeTask = (taskId, completionEvidence) => {
+    const nextState = completeTaskState({ orders, inventory, tasks: generatedTasks }, taskId, completionEvidence);
     setOrders(nextState.orders);
     setInventory(nextState.inventory);
     setGeneratedTasks(nextState.tasks);
     return nextState.tasks.find((task) => task.id === taskId) ?? null;
+  };
+
+  const reconnectPlatform = (platform) => {
+    setPlatformConnections((current) => reconnectPlatformConnections(current, platform));
   };
 
   const value = useMemo(
@@ -66,14 +74,16 @@ export function DemoStateProvider({ children }) {
       orders,
       inventory,
       generatedTasks,
+      platformConnections,
       updateOrderStatus,
       createOrderTask,
       createInventoryTask,
       createSuggestionTask,
       updateGeneratedTask,
       completeTask,
+      reconnectPlatform,
     }),
-    [orders, inventory, generatedTasks],
+    [orders, inventory, generatedTasks, platformConnections],
   );
 
   return <DemoStateContext.Provider value={value}>{children}</DemoStateContext.Provider>;

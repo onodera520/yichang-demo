@@ -23,9 +23,12 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
+import AiEvidencePanel from '../components/common/AiEvidencePanel.jsx';
+import DetailDrawer from '../components/common/DetailDrawer.jsx';
 import FilterSelect from '../components/common/FilterSelect.jsx';
+import PageHeaderActionButton from '../components/common/PageHeaderActionButton.jsx';
 import PlatformLogo from '../components/common/PlatformLogo.jsx';
-import RiskTag from '../components/common/RiskTag.jsx';
+import RiskExplanationPopover from '../components/common/RiskExplanationPopover.jsx';
 import SlaCountdown from '../components/common/SlaCountdown.jsx';
 import LiveUpdateTime from '../components/LiveUpdateTime.jsx';
 import { useToast } from '../components/common/Toast.jsx';
@@ -38,6 +41,7 @@ import {
 import { useSlaClock } from '../hooks/useSlaClock.js';
 import { useRefreshTime } from '../hooks/useRefreshTime.js';
 import { useDemoState } from '../state/DemoStateContext.jsx';
+import { calculateDataCompleteness } from '../state/trustLayer.js';
 import { useTopbarFilter } from '../state/TopbarFilterContext.jsx';
 import {
   filterAndSortPriorityRows,
@@ -242,7 +246,7 @@ function PriorityTable({ rows, onDetail, slaClock }) {
             {renderedRows.map((row) => (
               <tr key={row.id} className="border-t border-[#E8EDF5]">
                 <td className="whitespace-nowrap py-2.5 pl-1">
-                  <RiskTag type={row.riskLevel}>{row.riskLevel}</RiskTag>
+                  <RiskExplanationPopover level={row.riskLevel} explanation={row.riskExplanation} />
                 </td>
                 <td className="whitespace-nowrap py-2.5">{row.abnormalType}</td>
                 <td className="py-2.5 pr-3">
@@ -283,7 +287,7 @@ function formatSuggestionImpact(value) {
   };
 }
 
-function SuggestionPanel({ suggestions, onGenerate, onDetail }) {
+function SuggestionPanel({ suggestions, onGenerate, onDetail, onViewAll }) {
   return (
     <section className="flex min-h-0 flex-col overflow-hidden rounded-[14px] border border-[#E6EAF2] bg-white px-4 py-3 shadow-[var(--shadow-card)]">
       <div className="mb-2 flex shrink-0 items-center justify-between gap-4">
@@ -292,7 +296,7 @@ function SuggestionPanel({ suggestions, onGenerate, onDetail }) {
           <Info className="h-4 w-4 shrink-0 text-[#9AA4B5]" aria-hidden="true" />
           <span className="truncate text-xs text-[#8A98B3]">建议仅供人工判断，高风险操作不会自动执行</span>
         </div>
-        <button className="flex shrink-0 items-center gap-0.5 text-xs text-[#2F7BFF]" onClick={() => onDetail('/tasks')} type="button">
+        <button className="flex shrink-0 items-center gap-0.5 text-xs text-[#2F7BFF]" onClick={onViewAll} type="button">
           <span>查看全部(6)</span>
           <ChevronRight className="h-4 w-4" aria-hidden="true" />
         </button>
@@ -323,7 +327,7 @@ function SuggestionPanel({ suggestions, onGenerate, onDetail }) {
                 {impact.amount ? <span className="font-semibold text-[#FF1F1F]">¥{impact.amount}</span> : null}
               </div>
               <div className="flex shrink-0 gap-2">
-                <button className="h-7 rounded-[7px] border border-[#626873] px-2.5 text-xs text-[#344767]" onClick={() => onDetail('/orders')} type="button">
+                <button className="h-7 rounded-[7px] border border-[#626873] px-2.5 text-xs text-[#344767]" onClick={() => onDetail(item)} type="button">
                   查看详情
                 </button>
                 <button className="h-7 rounded-[7px] bg-[#2F7BFF] px-3 text-xs font-medium text-white" onClick={() => onGenerate(item, index)} type="button">
@@ -436,7 +440,7 @@ function TodoPanel({ onEnter }) {
   );
 }
 
-function MessagePanel() {
+function MessagePanel({ messages }) {
   return (
     <section className="flex h-full min-h-0 flex-col rounded-[14px] border border-[#E6EAF2] bg-white p-4 shadow-[var(--shadow-card)]">
       <div className="mb-4 flex shrink-0 items-center justify-between">
@@ -444,7 +448,7 @@ function MessagePanel() {
         <button className="text-xs text-[#2F7BFF]" type="button">查看全部(12)</button>
       </div>
       <div className="flex flex-1 flex-col justify-start gap-4 pb-1">
-        {systemMessages.slice(0, 5).map((message) => (
+        {messages.slice(0, 5).map((message) => (
           <div key={message.id} className="flex min-h-[22px] items-center justify-between gap-4 text-[13px] leading-6">
             <span className="truncate text-[#344767]">{message.content}</span>
             <span className="shrink-0 text-[#8A98B3]">{message.time}</span>
@@ -458,10 +462,21 @@ function MessagePanel() {
 export default function Dashboard() {
   const navigate = useNavigate();
   const { showToast } = useToast();
-  const { createSuggestionTask, orders } = useDemoState();
+  const { createSuggestionTask, orders, platformConnections } = useDemoState();
   const { keyword: topbarKeyword, platform: topbarPlatform, store: topbarStore } = useTopbarFilter();
   const slaClock = useSlaClock();
   const { refreshTime, refreshNow } = useRefreshTime();
+  const [selectedSuggestion, setSelectedSuggestion] = React.useState(null);
+  const dataCompleteness = React.useMemo(
+    () => calculateDataCompleteness(platformConnections),
+    [platformConnections],
+  );
+  const visibleSystemMessages = React.useMemo(
+    () => platformConnections.some((connection) => connection.platform === 'eBay' && connection.isStale)
+      ? systemMessages
+      : systemMessages.filter((message) => message.id !== 'msg-platform-ebay'),
+    [platformConnections],
+  );
   const priorityRows = React.useMemo(
     () =>
       orders
@@ -524,15 +539,17 @@ export default function Dashboard() {
   };
 
   return (
+    <>
     <div className="flex h-[calc(100vh-104px)] min-h-[720px] flex-col gap-3">
       <div className="page-header flex h-10 shrink-0 items-center justify-between">
         <h1 className="page-title">异常工作台</h1>
         <div className="flex items-center gap-4 text-sm text-[#8A98B3]">
+          <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+            <span className={`h-2 w-2 rounded-full ${dataCompleteness < 100 ? 'bg-[#F79009]' : 'bg-[#20A36A]'}`} />
+            数据完整度：{dataCompleteness}%
+          </span>
           <LiveUpdateTime value={refreshTime} />
-          <button className="flex h-9 items-center gap-2 rounded-[10px] border border-[#E2E8F0] bg-white px-3 text-sm text-[#1D273B]" onClick={refreshNow} type="button">
-            <RefreshCw className="h-4 w-4" />
-            刷新数据
-          </button>
+          <PageHeaderActionButton icon={RefreshCw} onClick={refreshNow}>刷新数据</PageHeaderActionButton>
         </div>
       </div>
 
@@ -548,13 +565,43 @@ export default function Dashboard() {
           <TrendPanel />
         </div>
         <div className="grid min-h-0 grid-rows-[390px_1fr] gap-3">
-          <SuggestionPanel suggestions={dashboardSuggestions} onGenerate={generateTask} onDetail={goDetail} />
+          <SuggestionPanel
+            suggestions={dashboardSuggestions}
+            onGenerate={generateTask}
+            onDetail={setSelectedSuggestion}
+            onViewAll={() => navigate('/tasks')}
+          />
           <div className="grid grid-cols-[0.9fr_1.1fr] gap-3">
             <TodoPanel onEnter={() => navigate('/tasks')} />
-            <MessagePanel />
+            <MessagePanel messages={visibleSystemMessages} />
           </div>
         </div>
       </div>
     </div>
+    <DetailDrawer
+      open={Boolean(selectedSuggestion)}
+      title={selectedSuggestion?.title || '建议详情'}
+      titleExtra={selectedSuggestion ? <RiskExplanationPopover level={selectedSuggestion.riskLevel} explanation={selectedSuggestion.riskExplanation} /> : null}
+      onClose={() => setSelectedSuggestion(null)}
+      width={420}
+      topOffset={64}
+      bodyClassName="bg-[#F5F7FB]"
+    >
+      {selectedSuggestion ? (
+        <div className="space-y-3">
+          <section className="rounded-[10px] border border-[#E3E9F3] bg-white p-4">
+            <div className="text-xs text-[#8A98B3]">建议结论</div>
+            <div className="mt-1 text-base font-semibold text-[#1D273B]">{selectedSuggestion.title}</div>
+            <div className="mt-3 text-sm leading-6 text-[#5F6B7A]">{selectedSuggestion.impact}</div>
+            <div className="mt-2 text-sm text-[#344767]">置信度 {Math.round(selectedSuggestion.confidence * 100)}%</div>
+          </section>
+          <AiEvidencePanel evidence={selectedSuggestion.aiEvidence} />
+          <button className="h-10 w-full rounded-[8px] bg-[#2F7BFF] text-sm font-semibold text-white" onClick={() => generateTask(selectedSuggestion)} type="button">
+            生成任务
+          </button>
+        </div>
+      ) : null}
+    </DetailDrawer>
+    </>
   );
 }

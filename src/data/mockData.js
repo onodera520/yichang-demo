@@ -329,6 +329,20 @@ const seedInventory = [
     suggestedReplenishment: 300,
   },
   {
+    sku: 'SKU-NJ-2406-018',
+    productName: '智能降噪蓝牙耳机标准版',
+    platform: 'Amazon',
+    warehouse: 'LA',
+    currentStock: 24,
+    inTransitStock: 36,
+    dailySales: 12,
+    availableDays: 4.7,
+    riskLevel: '高',
+    aiSuggestion: '补货120件至 LA 仓，覆盖活动周期并保留安全库存。',
+    confidence: 0.88,
+    suggestedReplenishment: 120,
+  },
+  {
     sku: 'ELE-KYB-01',
     productName: '有线机械键盘 黑轴',
     platform: 'TikTok Shop',
@@ -864,6 +878,132 @@ export const systemMessages = [
   { id: 'msg-004', content: '任务待确认#20260601001已完成待确认', time: '1小时前' },
   { id: 'msg-005', content: '陈浩将对象TTS-US-250601-002分派至张晓', time: '2小时前' },
 ];
+
+const riskScores = { 高: 86, 中: 68, 低: 42, 滞销: 61, 调拨: 57 };
+
+function createRiskExplanation(item, index = 0) {
+  const score = riskScores[item.riskLevel] ?? 60;
+  const amount = Number(item.amount || item.currentStock * item.dailySales || 0);
+  const slaScore = Math.round(score * 0.3);
+  const impactScore = Math.round(score * 0.28);
+  const repeatScore = Math.round(score * 0.2);
+  const alternativeScore = -8;
+  const platformScore = score - slaScore - impactScore - repeatScore - alternativeScore;
+  return {
+    score,
+    factors: [
+      { label: '剩余 SLA', score: slaScore, detail: item.remainingSLA || `${item.availableDays} 天可售` },
+      { label: '影响范围', score: impactScore, detail: item.impact || `预计影响金额 ¥${amount.toLocaleString('zh-CN')}` },
+      { label: '反复发生', score: repeatScore, detail: `近 30 天命中 ${2 + (index % 6)} 次同类规则` },
+      { label: '平台与履约风险', score: platformScore, detail: '综合平台处罚、履约时效和数据完整度' },
+      { label: '可替代方案', score: alternativeScore, detail: '存在人工确认后的可执行方案' },
+    ],
+  };
+}
+
+settings.platformConnections.forEach((connection) => {
+  if (connection.platform === 'eBay') {
+    Object.assign(connection, {
+      isStale: true,
+      lastSuccessfulSync: '2026-06-01 09:18:41',
+      dataCompleteness: 48,
+      description: '数据已停止同步，仅供参考',
+    });
+    return;
+  }
+  if (connection.platform === 'Shopify') {
+    Object.assign(connection, { isStale: false, dataCompleteness: 100, includeInCompleteness: false });
+    return;
+  }
+  Object.assign(connection, {
+    isStale: false,
+    lastSuccessfulSync: '2026-06-01 09:40:52',
+    dataCompleteness: 100,
+  });
+});
+
+orders.forEach((order, index) => {
+  order.riskExplanation = createRiskExplanation(order, index);
+  order.aiEvidence = {
+    updatedAt: order.platform === 'eBay' ? '2026-06-01 09:18:41' : '2026-06-01 09:41:52',
+    evidence: [
+      `${order.abnormalType}规则已命中，关联 ${order.relatedSku || '订单商品'} 数据`,
+      `当前影响金额 ¥${Number(order.amount || 0).toLocaleString('zh-CN')}`,
+      `剩余 SLA ${order.remainingSLA}，负责人 ${order.owner || '未分派'}`,
+    ],
+    risks: [
+      order.platform === 'eBay' ? '平台数据已停止同步，执行前需复核最新状态' : '执行后需确认平台状态已成功回写',
+      order.riskLevel === '高' ? '高风险操作需要人工确认' : '建议保留处理记录用于后续复盘',
+    ],
+  };
+});
+
+inventory.forEach((item, index) => {
+  const effectiveTransitStock = Number(item.inTransitStock || 0);
+  const dailySales = Number(item.dailySales || 0);
+  const safetyStock = item.sku === 'ELE-HEAD-01' ? 4 : Math.max(0, Math.round(dailySales * 0.25));
+  const packSize = item.sku === 'ELE-HEAD-01' ? 20 : 5;
+  const exactAvailableDays = dailySales > 0
+    ? Math.max(0, (Number(item.currentStock || 0) + effectiveTransitStock - safetyStock) / dailySales)
+    : 0;
+  item.availableDays = Math.round(exactAvailableDays * 10) / 10;
+  const targetDays = item.sku === 'ELE-HEAD-01'
+    ? 17
+    : item.suggestedReplenishment > 0 && dailySales > 0
+      ? (item.suggestedReplenishment + item.currentStock + effectiveTransitStock - safetyStock - 0.01) / dailySales
+      : Math.max(0, exactAvailableDays - 0.01);
+
+  item.inventoryPlanning = {
+    effectiveTransitStock,
+    safetyStock,
+    targetDays,
+    packSize,
+    supplierLeadDays: 12 + (index % 5),
+  };
+  item.riskExplanation = createRiskExplanation(item, index);
+  item.aiEvidence = {
+    updatedAt: item.platform === 'eBay' ? '2026-06-01 09:18:41' : '2026-06-01 09:41:52',
+    evidence: [
+      `当前库存 ${item.currentStock} 件，有效在途 ${effectiveTransitStock} 件`,
+      `安全库存 ${safetyStock} 件，预测日均销量 ${item.dailySales} 件`,
+      `目标覆盖 ${item.inventoryPlanning.targetDays.toFixed(1)} 天，箱规 ${packSize} 件`,
+    ],
+    risks: [
+      item.platform === 'eBay' ? '平台数据已过期，补货前需复核实时库存' : '销量预测变化可能影响最终补货数量',
+      `供应商预计交期 ${item.inventoryPlanning.supplierLeadDays} 天`,
+    ],
+  };
+});
+
+const suggestionEvidence = {
+  'suggestion-001': {
+    evidence: ['NJ 仓可用库存 42 件', 'LA 仓可用库存 0 件', '切换后预计增加运费 ¥38', '可避免 8 笔订单超时'],
+    risks: ['预计送达时间增加 1 天', '其中 2 笔订单仍可能超过平台承诺时效'],
+  },
+  'suggestion-002': {
+    evidence: ['LA 仓近 7 日销量持续上升', '当前库存无法覆盖补货周期', '120 件符合最小补货箱规'],
+    risks: ['供应商交期可能波动 2 天', '活动销量上升时仍需二次补货'],
+  },
+  'suggestion-003': {
+    evidence: ['物流轨迹已超过 48 小时未更新', '备用渠道当前妥投率 96.2%', '切换后预计减少 6 笔延误投诉'],
+    risks: ['渠道切换会增加单票成本约 ¥12', '需同步客服更新买家话术'],
+  },
+};
+
+dashboardSuggestions.forEach((suggestion, index) => {
+  suggestion.aiEvidence = {
+    updatedAt: '2026-06-01 09:41:52',
+    ...suggestionEvidence[suggestion.id],
+  };
+  suggestion.riskExplanation = createRiskExplanation(suggestion, index);
+});
+
+systemMessages.unshift({
+  id: 'msg-platform-ebay',
+  content: 'eBay 数据已停止同步，当前缓存数据仅供参考',
+  time: '23分钟前',
+  tone: 'warning',
+});
 
 export const chartData = analytics;
 export const inventoryRisks = inventory;
