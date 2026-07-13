@@ -2,6 +2,41 @@ import { buildCompletionPatch } from './trustLayer.js';
 
 const nowLabel = '刚刚';
 
+function getManualTaskRemainingSla(deadline) {
+  const normalizedDeadline = String(deadline || '').replace(/\s/g, '');
+  if (normalizedDeadline.includes('今天14:30')) return '02:00:00';
+  if (normalizedDeadline.includes('今天18:00')) return '04:00:00';
+  if (normalizedDeadline.includes('明天10:00') || normalizedDeadline.includes('24小时内')) return '24:00:00';
+  return '04:00:00';
+}
+
+export function buildManualTask(payload) {
+  const owner = payload.owner || '未分派';
+
+  return {
+    id: `task-manual-${Date.now()}`,
+    title: payload.title,
+    source: payload.source,
+    sourceType: payload.sourceType,
+    riskLevel: payload.riskLevel,
+    owner,
+    status: owner === '未分派' ? '待分派' : '已分派',
+    remainingSLA: getManualTaskRemainingSla(payload.deadline),
+    deadline: payload.deadline,
+    description: payload.description,
+    createdAt: nowLabel,
+    processLogs: [
+      {
+        time: nowLabel,
+        owner: owner === '未分派' ? '系统' : owner,
+        action: '人工创建任务',
+        detail: '已创建人工任务',
+        tone: 'blue',
+      },
+    ],
+  };
+}
+
 export function buildOrderTask(order) {
   return {
     id: `task-order-${order.id}-${Date.now()}`,

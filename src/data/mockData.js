@@ -703,6 +703,7 @@ function createTask(index) {
   const source = sourceType === '库存风险' ? orderSkuPool[index % orderSkuPool.length] : orders[index % orders.length].orderNo;
   const title = taskTitles[index % taskTitles.length];
   const remainingSLA = status === '已完成' ? '-' : buildSla(index + 4);
+  const overdueDuration = status === '已超时' ? remainingSLA : undefined;
 
   return {
     id: `task-${pad(index + 1)}`,
@@ -713,6 +714,7 @@ function createTask(index) {
     owner,
     status,
     remainingSLA,
+    ...(overdueDuration ? { overdueDuration } : {}),
     deadline: index % 4 === 0 ? '今天 18:00' : index % 4 === 1 ? '今天 14:30' : index % 4 === 2 ? '明天 10:00' : '24小时内',
     createdAt: index < 16 ? `今天 ${pad(7 + (index % 8), 2)}:${pad((index * 6) % 60, 2)}` : `06-${pad((index % 18) + 1, 2)} ${pad(9 + (index % 8), 2)}:${pad((index * 5) % 60, 2)}`,
     description: `${sourceType}触发 ${title}，需要负责人确认处理路径并回写处理结果。`,

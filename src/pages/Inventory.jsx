@@ -465,8 +465,8 @@ export default function Inventory() {
           <div className="h-[calc(100%-122px)] overflow-y-auto overflow-x-hidden px-5 [scrollbar-gutter:stable]">
             <table className="w-full table-fixed text-left">
               <colgroup>
-                <col style={{ width: '6%' }} />
-                <col style={{ width: '10%' }} />
+                <col style={{ width: '9%' }} />
+                <col style={{ width: '11%' }} />
                 <col style={{ width: '19%' }} />
                 <col style={{ width: '6%' }} />
                 <col style={{ width: '6%' }} />
@@ -474,7 +474,7 @@ export default function Inventory() {
                 <col style={{ width: '7%' }} />
                 <col style={{ width: '7%' }} />
                 <col style={{ width: '7%' }} />
-                <col style={{ width: '17%' }} />
+                <col style={{ width: '13%' }} />
                 <col style={{ width: '8%' }} />
               </colgroup>
               <thead className="sticky top-0 z-10 h-[52px] border-b border-[#E3E9F3] bg-white text-sm font-semibold text-[#8A98B3]">

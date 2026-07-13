@@ -1,9 +1,9 @@
 import React from 'react';
 import amazonLogo from '../../assets/platform-logos/amazon.svg';
 import ebayLogo from '../../assets/platform-logos/ebay.svg';
-import shopeeLogo from '../../assets/platform-logos/shopee.svg';
-import shopifyLogo from '../../assets/platform-logos/shopify.svg';
-import tiktokShopLogo from '../../assets/platform-logos/tiktok-shop.svg';
+import shopeeLogo from '../../assets/platform-logos/shopee.png';
+import shopifyLogo from '../../assets/platform-logos/shopify.png';
+import tiktokShopLogo from '../../assets/platform-logos/tiktok-shop.png';
 
 const platformLogos = {
   Amazon: {

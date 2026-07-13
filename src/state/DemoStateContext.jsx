@@ -1,7 +1,8 @@
 import React, { createContext, useContext, useMemo, useState } from 'react';
 import { inventory as mockInventory, orders as mockOrders, settings as mockSettings } from '../data/mockData.js';
-import { buildInventoryTask, buildOrderTask, buildSuggestionTask, completeTaskState } from './demoFlow.js';
+import { buildInventoryTask, buildManualTask, buildOrderTask, buildSuggestionTask, completeTaskState } from './demoFlow.js';
 import { reconnectPlatformConnections } from './trustLayer.js';
+import { updateTasksByIds } from './taskOperations.js';
 
 const DemoStateContext = createContext(null);
 
@@ -48,13 +49,18 @@ export function DemoStateProvider({ children }) {
     return task;
   };
 
+  const createManualTask = (payload) => {
+    const task = buildManualTask(payload);
+    setGeneratedTasks((current) => [task, ...current]);
+    return task;
+  };
+
+  const updateGeneratedTasks = (taskIds, updater) => {
+    setGeneratedTasks((current) => updateTasksByIds(current, taskIds, updater));
+  };
+
   const updateGeneratedTask = (taskId, updater) => {
-    setGeneratedTasks((current) =>
-      current.map((task) => {
-        if (task.id !== taskId) return task;
-        return typeof updater === 'function' ? updater(task) : { ...task, ...updater };
-      }),
-    );
+    updateGeneratedTasks([taskId], updater);
   };
 
   const completeTask = (taskId, completionEvidence) => {
@@ -79,7 +85,9 @@ export function DemoStateProvider({ children }) {
       createOrderTask,
       createInventoryTask,
       createSuggestionTask,
+      createManualTask,
       updateGeneratedTask,
+      updateGeneratedTasks,
       completeTask,
       reconnectPlatform,
     }),

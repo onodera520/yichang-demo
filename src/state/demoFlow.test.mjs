@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import {
   buildInventoryTask,
+  buildManualTask,
   buildOrderTask,
   buildSuggestionTask,
   completeTaskState,
@@ -148,3 +149,32 @@ assert.equal(new Set(suggestionTasks.map((task) => task.impact)).size, 3);
 assert.equal(suggestionTasks[0].sourceId, 'order-001');
 assert.equal(suggestionTasks[1].sourceId, 'SKU-NJ-2406-018');
 assert.equal(suggestionTasks[2].sourceId, 'order-002');
+
+const manualTask = buildManualTask({
+  title: '人工核验物流异常',
+  source: 'TTS-US-240613-0316',
+  sourceType: '物流异常',
+  riskLevel: '中',
+  owner: '未分派',
+  deadline: '今天 14:30',
+  description: '联系承运商核验轨迹。',
+});
+assert.match(manualTask.id, /^task-manual-\d+$/);
+assert.equal(manualTask.status, '待分派');
+assert.equal(manualTask.remainingSLA, '02:00:00');
+assert.equal(manualTask.createdAt, '刚刚');
+assert.equal(manualTask.sourceKind, undefined);
+assert.equal(manualTask.sourceId, undefined);
+assert.equal(manualTask.processLogs[0].action, '人工创建任务');
+assert.equal(
+  buildManualTask({ title: '晚间跟进', owner: '王敏', deadline: '今天 18:00' }).remainingSLA,
+  '04:00:00',
+);
+assert.equal(
+  buildManualTask({ title: '明日跟进', owner: '王敏', deadline: '明天 10:00' }).remainingSLA,
+  '24:00:00',
+);
+assert.equal(
+  buildManualTask({ title: '时限跟进', owner: '王敏', deadline: '24小时内' }).remainingSLA,
+  '24:00:00',
+);
