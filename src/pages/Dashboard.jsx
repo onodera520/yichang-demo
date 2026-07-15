@@ -26,6 +26,7 @@ import {
 import AiEvidencePanel from '../components/common/AiEvidencePanel.jsx';
 import DetailDrawer from '../components/common/DetailDrawer.jsx';
 import FilterSelect from '../components/common/FilterSelect.jsx';
+import MetricSparkline from '../components/common/MetricSparkline.jsx';
 import PageHeaderActionButton from '../components/common/PageHeaderActionButton.jsx';
 import PlatformLogo from '../components/common/PlatformLogo.jsx';
 import RiskExplanationPopover from '../components/common/RiskExplanationPopover.jsx';
@@ -42,7 +43,13 @@ import { useSlaClock } from '../hooks/useSlaClock.js';
 import { useRefreshTime } from '../hooks/useRefreshTime.js';
 import { useDemoState } from '../state/DemoStateContext.jsx';
 import { calculateDataCompleteness } from '../state/trustLayer.js';
+import {
+  filterDashboardMessages,
+  getDashboardTodoGroups,
+} from '../state/dashboardInbox.js';
+import { getTaskSlaPresentation } from '../state/taskSla.js';
 import { useTopbarFilter } from '../state/TopbarFilterContext.jsx';
+import { formatMetricValue } from '../utils/formatMetricValue.js';
 import {
   filterAndSortPriorityRows,
   getNextPrioritySort,
@@ -55,7 +62,7 @@ import lossRiskIcon from '../assets/dashboard-icons/loss-risk.png';
 import stockRiskIcon from '../assets/dashboard-icons/stock-risk.png';
 
 const metricIcons = [highRiskOrderIcon, stockRiskIcon, logisticsDelayIcon, afterSaleIcon, lossRiskIcon];
-const metricMarkerTones = ['#FF4D4F', '#FF8A00', '#20C997', '#6D35FF', '#20C997'];
+const metricMarkerTones = ['#FF4D4F', '#FF8A00', '#20C997', '#FF1F1F', '#20C997'];
 const suggestionIcons = [highRiskOrderIcon, stockRiskIcon, logisticsDelayIcon];
 
 const trendTabs = ['全部', '订单异常', '库存异常', '物流异常', '售后异常', '利润风险'];
@@ -69,9 +76,16 @@ const trendLines = [
 ];
 
 const todos = [
-  { label: '已超时任务', value: 2, icon: Clock3, color: '#FF1F1F' },
-  { label: '待确认任务', value: 3, icon: PackageCheck, color: '#FF8A00' },
-  { label: '今日到期任务', value: 5, icon: MessageCircle, color: '#2F7BFF' },
+  { key: 'overdue', label: '已超时任务', icon: Clock3, color: '#FF1F1F' },
+  { key: 'pendingConfirmation', label: '待确认任务', icon: PackageCheck, color: '#FF8A00' },
+  { key: 'dueToday', label: '今日到期任务', icon: MessageCircle, color: '#2F7BFF' },
+];
+
+const todoTabs = [
+  { key: 'all', label: '全部' },
+  { key: 'overdue', label: '已超时' },
+  { key: 'pendingConfirmation', label: '待确认' },
+  { key: 'dueToday', label: '今日到期' },
 ];
 
 function formatCurrency(value) {
@@ -96,7 +110,7 @@ function MetricCard({ item, index, onDetail }) {
   const changeColor = positive ? 'text-[#FF1F1F]' : negative ? 'text-[#16C7A1]' : 'text-[#8A98B3]';
 
   return (
-    <article className="relative h-[160px] overflow-hidden rounded-[14px] border border-[#E8ECF3] bg-white px-6 py-4 shadow-[0_8px_24px_rgba(28,39,71,0.06)]">
+    <article className="metric-sparkline-card relative h-[160px] overflow-hidden rounded-[14px] border border-[#E8ECF3] bg-white px-6 py-4 shadow-[0_8px_24px_rgba(28,39,71,0.06)]">
       <div className="relative z-10">
         <div className="flex items-center gap-3">
           <div className="flex h-10 w-10 shrink-0 items-center justify-center">
@@ -122,47 +136,15 @@ function MetricCard({ item, index, onDetail }) {
           </button>
         </div>
       </div>
-      <Sparkline points={item.trend} color={item.tone} markerColor={markerColor} />
+      <MetricSparkline
+        animationDelay={index * 50}
+        color={item.tone}
+        formatValue={(value) => formatMetricValue(value, item.valueFormat)}
+        label={item.label}
+        markerColor={markerColor}
+        points={item.trend}
+      />
     </article>
-  );
-}
-
-function Sparkline({ points, color, markerColor }) {
-  const width = 210;
-  const height = 32;
-  const horizontalPadding = 3;
-  const min = Math.min(...points);
-  const max = Math.max(...points);
-  const range = max - min || 1;
-  const step = (width - horizontalPadding * 2) / (points.length - 1);
-  const coords = points.map((point, index) => {
-    const x = horizontalPadding + index * step;
-    const y = height - ((point - min) / range) * 26 - 3;
-    return [x, y];
-  });
-  const line = coords.map(([x, y], index) => `${index === 0 ? 'M' : 'L'}${x},${y}`).join(' ');
-  const area = `${line} L${width - horizontalPadding},${height} L${horizontalPadding},${height} Z`;
-  const id = `metric-fill-${color.replace('#', '')}`;
-
-  return (
-    <div className="pointer-events-none absolute bottom-4 left-6 right-6 h-6">
-      <svg
-        aria-hidden="true"
-        className="h-full w-full"
-        viewBox={`0 0 ${width} ${height}`}
-        preserveAspectRatio="none"
-      >
-        <defs>
-          <linearGradient id={id} x1="0" x2="0" y1="0" y2="1">
-            <stop offset="0%" stopColor={color} stopOpacity="0.24" />
-            <stop offset="100%" stopColor={color} stopOpacity="0" />
-          </linearGradient>
-        </defs>
-        <path d={area} fill={`url(#${id})`} />
-        <path d={line} fill="none" stroke={color} strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.2" />
-        <circle cx={coords.at(-1)[0]} cy={coords.at(-1)[1]} r="2.5" fill="#fff" stroke={markerColor} strokeWidth="2" />
-      </svg>
-    </div>
   );
 }
 
@@ -415,22 +397,27 @@ function TrendPanel() {
   );
 }
 
-function TodoPanel({ onEnter }) {
+function TodoPanel({ groups, onEnter, onOpen }) {
   return (
     <section className="rounded-[14px] border border-[#E6EAF2] bg-white p-4 shadow-[var(--shadow-card)]">
       <div className="mb-3 flex items-center justify-between">
         <h2 className="text-[17px] font-semibold text-[#1D273B]">待办事项</h2>
-        <button className="text-xs text-[#2F7BFF]" onClick={onEnter} type="button">查看全部(8)</button>
+        <button className="text-xs text-[#2F7BFF]" onClick={() => onOpen('all')} type="button">查看全部({groups.all.length})</button>
       </div>
       <div className="space-y-2">
         {todos.map((todo) => (
-          <div key={todo.label} className="flex h-11 items-center justify-between rounded-[10px] bg-[#F2F7FF] px-3">
+          <button
+            key={todo.label}
+            className="flex h-11 w-full items-center justify-between rounded-[10px] bg-[#F2F7FF] px-3 text-left transition hover:bg-[#E8F1FF]"
+            onClick={() => onOpen(todo.key)}
+            type="button"
+          >
             <div className="flex items-center gap-2 text-sm text-[#1D273B]">
               <todo.icon className="h-5 w-5" style={{ color: todo.color }} />
               {todo.label}
             </div>
-            <span className="text-xl font-semibold text-black">{todo.value}</span>
-          </div>
+            <span className="text-xl font-semibold text-black">{groups[todo.key].length}</span>
+          </button>
         ))}
       </div>
       <button className="mt-3 h-10 w-full rounded-[9px] bg-[#2F7BFF] text-sm font-semibold text-white" onClick={onEnter} type="button">
@@ -440,12 +427,12 @@ function TodoPanel({ onEnter }) {
   );
 }
 
-function MessagePanel({ messages }) {
+function MessagePanel({ messages, onOpen }) {
   return (
     <section className="flex h-full min-h-0 flex-col rounded-[14px] border border-[#E6EAF2] bg-white p-4 shadow-[var(--shadow-card)]">
       <div className="mb-4 flex shrink-0 items-center justify-between">
         <h2 className="text-[17px] font-semibold text-[#1D273B]">系统消息</h2>
-        <button className="text-xs text-[#2F7BFF]" type="button">查看全部(12)</button>
+        <button className="text-xs text-[#2F7BFF]" onClick={onOpen} type="button">查看全部({messages.length})</button>
       </div>
       <div className="flex flex-1 flex-col justify-start gap-4 pb-1">
         {messages.slice(0, 5).map((message) => (
@@ -459,14 +446,162 @@ function MessagePanel({ messages }) {
   );
 }
 
+function TodoDrawerContent({ filter, groups, onFilterChange, onTaskClick, slaClock }) {
+  const visibleTasks = groups[filter] ?? groups.all;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap gap-2">
+        {todoTabs.map((tab) => (
+          <button
+            key={tab.key}
+            className={`h-8 rounded-[7px] px-3 text-xs font-medium transition ${
+              filter === tab.key ? 'bg-[#2F7BFF] text-white' : 'border border-[#DCE3EE] bg-white text-[#5F6B7A] hover:border-[#9DBFFF]'
+            }`}
+            onClick={() => onFilterChange(tab.key)}
+            type="button"
+          >
+            {tab.label} ({groups[tab.key].length})
+          </button>
+        ))}
+      </div>
+      <div className="space-y-2.5">
+        {visibleTasks.map((task) => {
+          const sla = getTaskSlaPresentation(task, slaClock.nowMs, slaClock.anchorMs);
+          const urgent = sla.state === 'overdue' || (sla.state === 'remaining' && sla.seconds < 7200);
+          return (
+            <button
+              key={task.id}
+              aria-label={`查看任务：${task.title}`}
+              data-task-id={task.id}
+              className="w-full rounded-[10px] border border-[#E3E9F3] bg-white p-4 text-left transition hover:border-[#9DBFFF] hover:bg-[#F8FBFF]"
+              onClick={() => onTaskClick(task)}
+              type="button"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="truncate text-sm font-semibold text-[#1D273B]">{task.title}</div>
+                  <div className="mt-1 truncate text-xs text-[#7889A8]">{task.source || '人工创建任务'}</div>
+                </div>
+                <ChevronRight className="mt-0.5 h-4 w-4 shrink-0 text-[#9AA7BC]" />
+              </div>
+              <div className="mt-3 flex items-center justify-between gap-3 text-xs">
+                <span className="truncate text-[#5F6B7A]">{task.owner || '未分派'} · {task.status}</span>
+                <span className={`shrink-0 font-medium ${urgent ? 'text-[#FF1F1F]' : 'text-[#344767]'}`}>{sla.label}</span>
+              </div>
+            </button>
+          );
+        })}
+        {visibleTasks.length === 0 ? (
+          <div className="rounded-[10px] border border-dashed border-[#DCE3EE] py-12 text-center text-sm text-[#8A98B3]">当前分类暂无待办任务</div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function MessageDrawerContent({
+  expandedMessageId,
+  filter,
+  messages,
+  onFilterChange,
+  onMarkAllRead,
+  onMessageClick,
+  readMessageIds,
+}) {
+  const visibleMessages = filterDashboardMessages(messages, readMessageIds, filter);
+  const unreadCount = filterDashboardMessages(messages, readMessageIds, 'unread').length;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex gap-2">
+          {[
+            { key: 'all', label: `全部 (${messages.length})` },
+            { key: 'unread', label: `未读 (${unreadCount})` },
+          ].map((tab) => (
+            <button
+              key={tab.key}
+              className={`h-8 rounded-[7px] px-3 text-xs font-medium transition ${
+                filter === tab.key ? 'bg-[#2F7BFF] text-white' : 'border border-[#DCE3EE] bg-white text-[#5F6B7A]'
+              }`}
+              onClick={() => onFilterChange(tab.key)}
+              type="button"
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+        <button
+          className="inline-flex items-center gap-1 text-xs text-[#2F7BFF] disabled:text-[#AAB4C5]"
+          disabled={unreadCount === 0}
+          onClick={onMarkAllRead}
+          type="button"
+        >
+          <CheckCircle2 className="h-3.5 w-3.5" />
+          全部已读
+        </button>
+      </div>
+      <div className="space-y-2.5">
+        {visibleMessages.map((message) => {
+          const unread = !readMessageIds.has(message.id);
+          const expanded = expandedMessageId === message.id;
+          return (
+            <button
+              key={message.id}
+              aria-label={`${message.target ? '前往处理' : '查看消息'}：${message.content}`}
+              className={`w-full rounded-[10px] border p-4 text-left transition ${
+                unread ? 'border-[#CFE0FF] bg-[#F7FAFF]' : 'border-[#E3E9F3] bg-white'
+              } hover:border-[#9DBFFF]`}
+              onClick={() => onMessageClick(message)}
+              type="button"
+            >
+              <div className="flex items-start gap-3">
+                <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${unread ? 'bg-[#2F7BFF]' : 'bg-transparent'}`} />
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-start justify-between gap-3">
+                    <span className="text-sm font-medium leading-5 text-[#1D273B]">{message.content}</span>
+                    {message.target ? <ChevronRight className="mt-0.5 h-4 w-4 shrink-0 text-[#9AA7BC]" /> : null}
+                  </div>
+                  <div className="mt-1 flex items-center gap-2 text-xs text-[#8A98B3]">
+                    <span>{message.category}</span>
+                    <span>·</span>
+                    <span>{message.time}</span>
+                  </div>
+                  {expanded || message.target ? <div className="mt-2 text-xs leading-5 text-[#5F6B7A]">{message.detail}</div> : null}
+                </div>
+              </div>
+            </button>
+          );
+        })}
+        {visibleMessages.length === 0 ? (
+          <div className="rounded-[10px] border border-dashed border-[#DCE3EE] py-12 text-center text-sm text-[#8A98B3]">暂无未读消息</div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
 export default function Dashboard() {
   const navigate = useNavigate();
   const { showToast } = useToast();
-  const { createSuggestionTask, orders, platformConnections } = useDemoState();
+  const {
+    createSuggestionTask,
+    markAllMessagesRead,
+    markMessageRead,
+    orders,
+    platformConnections,
+    readMessageIds,
+    tasks,
+  } = useDemoState();
   const { keyword: topbarKeyword, platform: topbarPlatform, store: topbarStore } = useTopbarFilter();
   const slaClock = useSlaClock();
   const { refreshTime, refreshNow } = useRefreshTime();
   const [selectedSuggestion, setSelectedSuggestion] = React.useState(null);
+  const [utilityDrawer, setUtilityDrawer] = React.useState(null);
+  const [todoFilter, setTodoFilter] = React.useState('all');
+  const [messageFilter, setMessageFilter] = React.useState('all');
+  const [expandedMessageId, setExpandedMessageId] = React.useState(null);
   const dataCompleteness = React.useMemo(
     () => calculateDataCompleteness(platformConnections),
     [platformConnections],
@@ -476,6 +611,10 @@ export default function Dashboard() {
       ? systemMessages
       : systemMessages.filter((message) => message.id !== 'msg-platform-ebay'),
     [platformConnections],
+  );
+  const todoGroups = React.useMemo(
+    () => getDashboardTodoGroups(tasks, slaClock.nowMs, slaClock.anchorMs),
+    [slaClock.anchorMs, slaClock.nowMs, tasks],
   );
   const priorityRows = React.useMemo(
     () =>
@@ -538,6 +677,27 @@ export default function Dashboard() {
     navigate('/tasks', { state: { highlightTaskId: task.id } });
   };
 
+  const openTodoDrawer = (filter = 'all') => {
+    setSelectedSuggestion(null);
+    setTodoFilter(filter);
+    setUtilityDrawer('todo');
+  };
+
+  const openMessageDrawer = () => {
+    setSelectedSuggestion(null);
+    setMessageFilter('all');
+    setUtilityDrawer('messages');
+  };
+
+  const handleMessageClick = (message) => {
+    markMessageRead(message.id);
+    if (message.target) {
+      navigate(message.target.route, { state: message.target.state });
+      return;
+    }
+    setExpandedMessageId((current) => (current === message.id ? null : message.id));
+  };
+
   return (
     <>
     <div className="flex h-[calc(100vh-104px)] min-h-[720px] flex-col gap-3">
@@ -568,12 +728,15 @@ export default function Dashboard() {
           <SuggestionPanel
             suggestions={dashboardSuggestions}
             onGenerate={generateTask}
-            onDetail={setSelectedSuggestion}
+            onDetail={(suggestion) => {
+              setUtilityDrawer(null);
+              setSelectedSuggestion(suggestion);
+            }}
             onViewAll={() => navigate('/tasks')}
           />
           <div className="grid grid-cols-[0.9fr_1.1fr] gap-3">
-            <TodoPanel onEnter={() => navigate('/tasks')} />
-            <MessagePanel messages={visibleSystemMessages} />
+            <TodoPanel groups={todoGroups} onEnter={() => navigate('/tasks')} onOpen={openTodoDrawer} />
+            <MessagePanel messages={visibleSystemMessages} onOpen={openMessageDrawer} />
           </div>
         </div>
       </div>
@@ -601,6 +764,40 @@ export default function Dashboard() {
           </button>
         </div>
       ) : null}
+    </DetailDrawer>
+    <DetailDrawer
+      open={utilityDrawer === 'todo'}
+      title="今日待办"
+      onClose={() => setUtilityDrawer(null)}
+      width={460}
+      topOffset={64}
+      bodyClassName="bg-[#F5F7FB]"
+    >
+      <TodoDrawerContent
+        filter={todoFilter}
+        groups={todoGroups}
+        onFilterChange={setTodoFilter}
+        onTaskClick={(task) => navigate('/tasks', { state: { detailTaskId: task.id } })}
+        slaClock={slaClock}
+      />
+    </DetailDrawer>
+    <DetailDrawer
+      open={utilityDrawer === 'messages'}
+      title="系统消息"
+      onClose={() => setUtilityDrawer(null)}
+      width={460}
+      topOffset={64}
+      bodyClassName="bg-[#F5F7FB]"
+    >
+      <MessageDrawerContent
+        expandedMessageId={expandedMessageId}
+        filter={messageFilter}
+        messages={visibleSystemMessages}
+        onFilterChange={setMessageFilter}
+        onMarkAllRead={() => markAllMessagesRead(visibleSystemMessages.map((message) => message.id))}
+        onMessageClick={handleMessageClick}
+        readMessageIds={readMessageIds}
+      />
     </DetailDrawer>
     </>
   );

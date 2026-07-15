@@ -5,6 +5,7 @@ export { default as DataFreshnessNotice } from './DataFreshnessNotice.jsx';
 export { default as DetailDrawer } from './DetailDrawer.jsx';
 export { default as FilterSelect } from './FilterSelect.jsx';
 export { default as MetricCard } from './MetricCard.jsx';
+export { default as MetricSparkline } from './MetricSparkline.jsx';
 export { default as PageHeaderActionButton } from './PageHeaderActionButton.jsx';
 export { default as PlatformLogo } from './PlatformLogo.jsx';
 export { default as RiskTag } from './RiskTag.jsx';

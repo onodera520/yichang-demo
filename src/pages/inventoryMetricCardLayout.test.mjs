@@ -23,20 +23,14 @@ assert.match(
 
 assert.match(
   source,
-  /className="pointer-events-none absolute bottom-4 left-6 right-6 h-6"/,
-  'the sparkline should preserve balanced bottom spacing',
-);
-
-assert.match(source, /className="h-full w-full"/, 'the sparkline SVG should fill its wrapper');
-
-assert.match(
-  source,
-  /<circle cx=\{coords\.at\(-1\)\[0\]\}/,
-  'the sparkline should render an endpoint marker',
+  /metric-sparkline-card relative h-\[160px\]/,
+  'inventory metric cards should scope hover effects to the sparkline',
 );
 
 assert.match(
   source,
-  /const horizontalPadding = 3;/,
-  'the sparkline should reserve horizontal space for its endpoint marker',
+  /<MetricSparkline[\s\S]*animationDelay=\{index \* 50\}[\s\S]*label=\{card\.label\}/,
+  'inventory cards should use the shared sparkline with 50ms stagger',
 );
+
+assert.doesNotMatch(source, /preserveAspectRatio="none"/, 'inventory cards should not stretch endpoint circles');

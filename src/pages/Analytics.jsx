@@ -14,6 +14,7 @@ import {
   YAxis,
 } from 'recharts';
 import FilterSelect from '../components/common/FilterSelect.jsx';
+import MetricSparkline from '../components/common/MetricSparkline.jsx';
 import PageHeaderActionButton from '../components/common/PageHeaderActionButton.jsx';
 import PlatformLogo from '../components/common/PlatformLogo.jsx';
 import LiveUpdateTime from '../components/LiveUpdateTime.jsx';
@@ -26,15 +27,21 @@ import cumulativeAnomaliesIcon from '../assets/analytics-icons/cumulative-anomal
 import processedAnomaliesIcon from '../assets/analytics-icons/processed-anomalies.png';
 import taskTimeoutRateIcon from '../assets/analytics-icons/task-timeout-rate.png';
 import warningAccuracyIcon from '../assets/analytics-icons/warning-accuracy.png';
+import { formatMetricValue } from '../utils/formatMetricValue.js';
 
-const metricConfig = [
-  { label: '累计异常数', value: '2,813', change: '+131', icon: cumulativeAnomaliesIcon, tone: '#2F7BFF', trend: [42, 45, 39, 48, 43, 38, 46, 41, 49, 63, 44, 51, 42, 62] },
-  { label: '已处理异常', value: '2,487', change: '+211', icon: processedAnomaliesIcon, tone: '#2F7BFF', trend: [36, 40, 43, 35, 46, 42, 38, 48, 41, 37, 43, 39, 51, 64] },
-  { label: '平均处理时长', value: '37.2 分', change: '-2.1', icon: averageProcessingTimeIcon, tone: '#19CFA4', trend: [45, 47, 40, 52, 46, 41, 49, 43, 39, 48, 61, 45, 51, 44] },
-  { label: '任务超时率', value: '6.12%', change: '-0.14%', icon: taskTimeoutRateIcon, tone: '#19CFA4', trend: [38, 42, 45, 36, 49, 44, 39, 46, 40, 37, 44, 58, 42, 47] },
-  { label: 'AI采纳率', value: '78.6%', change: '+6.4%', icon: aiAdoptionRateIcon, tone: '#2F7BFF', trend: [41, 45, 48, 39, 51, 45, 39, 48, 42, 38, 45, 63, 43, 58] },
-  { label: '预警准确率', value: '92.4%', change: '+3.1%', icon: warningAccuracyIcon, tone: '#2F7BFF', trend: [39, 43, 46, 38, 50, 43, 38, 47, 41, 39, 48, 64, 44, 59] },
+const metricVisualConfig = [
+  { icon: cumulativeAnomaliesIcon, tone: '#2F7BFF' },
+  { icon: processedAnomaliesIcon, tone: '#2F7BFF' },
+  { icon: averageProcessingTimeIcon, tone: '#19CFA4' },
+  { icon: taskTimeoutRateIcon, tone: '#19CFA4' },
+  { icon: aiAdoptionRateIcon, tone: '#2F7BFF' },
+  { icon: warningAccuracyIcon, tone: '#2F7BFF' },
 ];
+
+const metricConfig = analytics.overviewMetrics.map((metric, index) => ({
+  ...metric,
+  ...metricVisualConfig[index],
+}));
 
 const trendLines = [
   { key: 'order', name: '订单异常', color: '#0B5FC7' },
@@ -197,12 +204,12 @@ function TimeSelect({ value, onChange, open, onOpenChange, options = timeOptions
   );
 }
 
-function AnalyticsMetricCard({ item }) {
+function AnalyticsMetricCard({ index, item }) {
   const isPositive = item.change.startsWith('+');
   const changeColor = isPositive ? 'text-[#2F7BFF]' : 'text-[#19CFA4]';
 
   return (
-    <article className="relative h-[160px] overflow-hidden rounded-[14px] border border-[#E8ECF3] bg-white px-6 py-4 shadow-[0_8px_24px_rgba(28,39,71,0.06)]">
+    <article className="metric-sparkline-card relative h-[160px] overflow-hidden rounded-[14px] border border-[#E8ECF3] bg-white px-6 py-4 shadow-[0_8px_24px_rgba(28,39,71,0.06)]">
       <div className="relative z-10">
         <div className="flex items-center gap-3">
           <div className="flex h-10 w-10 shrink-0 items-center justify-center">
@@ -218,42 +225,14 @@ function AnalyticsMetricCard({ item }) {
           </span>
         </div>
       </div>
-      <Sparkline points={item.trend} color={item.tone} />
+      <MetricSparkline
+        animationDelay={index * 50}
+        color={item.tone}
+        formatValue={(value) => formatMetricValue(value, item.valueFormat)}
+        label={item.label}
+        points={item.trend}
+      />
     </article>
-  );
-}
-
-function Sparkline({ points, color }) {
-  const width = 180;
-  const height = 32;
-  const horizontalPadding = 3;
-  const min = Math.min(...points);
-  const max = Math.max(...points);
-  const range = max - min || 1;
-  const step = (width - horizontalPadding * 2) / (points.length - 1);
-  const coords = points.map((point, index) => {
-    const x = horizontalPadding + index * step;
-    const y = height - ((point - min) / range) * 25 - 4;
-    return [x, y];
-  });
-  const line = coords.map(([x, y], index) => `${index === 0 ? 'M' : 'L'}${x},${y}`).join(' ');
-  const area = `${line} L${width - horizontalPadding},${height} L${horizontalPadding},${height} Z`;
-  const id = `analytics-fill-${color.replace('#', '')}`;
-
-  return (
-    <div className="pointer-events-none absolute bottom-4 left-6 right-6 h-6">
-      <svg aria-hidden="true" className="h-full w-full" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none">
-        <defs>
-          <linearGradient id={id} x1="0" x2="0" y1="0" y2="1">
-            <stop offset="0%" stopColor={color} stopOpacity="0.24" />
-            <stop offset="100%" stopColor={color} stopOpacity="0" />
-          </linearGradient>
-        </defs>
-        <path d={area} fill={`url(#${id})`} />
-        <path d={line} fill="none" stroke={color} strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.2" />
-        <circle cx={coords.at(-1)[0]} cy={coords.at(-1)[1]} r="2.5" fill="#fff" stroke={color} strokeWidth="2" />
-      </svg>
-    </div>
   );
 }
 
@@ -478,8 +457,8 @@ export default function Analytics() {
       </div>
 
       <div className="grid shrink-0 gap-3" style={{ gridTemplateColumns: 'repeat(6, minmax(0, 1fr))' }}>
-        {metrics.map((item) => (
-          <AnalyticsMetricCard key={item.label} item={item} />
+        {metrics.map((item, index) => (
+          <AnalyticsMetricCard key={item.label} index={index} item={item} />
         ))}
       </div>
 

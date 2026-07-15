@@ -244,7 +244,8 @@ function createOrder(index) {
   const platform = orderPlatforms[index % orderPlatforms.length];
   const country = orderCountries[index % orderCountries.length];
   const store = orderStores[index % orderStores.length];
-  const owner = orderOwners[index % orderOwners.length];
+  const status = orderStatuses[index % orderStatuses.length];
+  const owner = status === '待分派' ? '未分派' : orderOwners[index % orderOwners.length];
   const riskLevel = index % 9 === 0 ? '高' : index % 3 === 0 ? '中' : index % 4 === 0 ? '低' : index % 5 === 0 ? '高' : '中';
   const amount = 420 + ((index * 317) % 7200);
   const warehouse = ['NJ', 'LA', 'TX', 'UK', 'DE'][index % 5];
@@ -262,7 +263,7 @@ function createOrder(index) {
     amount,
     remainingSLA: buildSla(index),
     owner,
-    status: orderStatuses[index % orderStatuses.length],
+    status,
     aiSuggestion: orderSuggestion(type, warehouse, 80 + (index % 9) * 20),
     confidence: Number((0.68 + (index % 25) / 100).toFixed(2)),
     impact: `影响 ${2 + (index % 9)} 笔订单，预计挽回金额 ¥${amount.toLocaleString('zh-CN')}`,
@@ -735,12 +736,12 @@ export const tasks = [...seedTasks, ...Array.from({ length: 89 - seedTasks.lengt
 
 export const analytics = {
   overviewMetrics: [
-    { label: '累计异常数', value: 2813, change: '+131', trend: 'up' },
-    { label: '已处理异常', value: 2487, change: '+211', trend: 'up' },
-    { label: '平均处理时长', value: '37.2 分', change: '-2.1', trend: 'down' },
-    { label: '任务超时率', value: '6.12%', change: '-0.14%', trend: 'down' },
-    { label: 'AI采纳率', value: '78.6%', change: '+6.4%', trend: 'up' },
-    { label: '预警准确率', value: '92.4%', change: '+3.1%', trend: 'up' },
+    { label: '累计异常数', value: '2,813', currentValue: 2813, change: '+131', changeValue: 131, valueFormat: 'integer', trend: [1572, 1650, 1739, 1821, 1910, 1988, 2076, 2164, 2251, 2340, 2452, 2564, 2682, 2813] },
+    { label: '已处理异常', value: '2,487', currentValue: 2487, change: '+211', changeValue: 211, valueFormat: 'integer', trend: [1336, 1418, 1502, 1589, 1680, 1764, 1855, 1941, 2034, 2118, 2189, 2238, 2276, 2487] },
+    { label: '平均处理时长', value: '37.2 分', currentValue: 37.2, change: '-2.1', changeValue: -2.1, valueFormat: 'minutes-1', trend: [45.8, 44.6, 43.9, 44.8, 42.7, 43.5, 41.8, 42.4, 40.9, 41.6, 40.7, 40.1, 39.3, 37.2] },
+    { label: '任务超时率', value: '6.12%', currentValue: 6.12, change: '-0.14%', changeValue: -0.14, valueFormat: 'percent-2', trend: [8.42, 8.11, 8.36, 7.92, 7.68, 7.81, 7.44, 7.26, 7.39, 6.98, 6.74, 6.55, 6.26, 6.12] },
+    { label: 'AI采纳率', value: '78.6%', currentValue: 78.6, change: '+6.4%', changeValue: 6.4, valueFormat: 'percent-1', trend: [61.2, 62.8, 61.9, 64.1, 65.4, 64.8, 66.2, 67.5, 66.9, 68.3, 69.7, 71.1, 72.2, 78.6] },
+    { label: '预警准确率', value: '92.4%', currentValue: 92.4, change: '+3.1%', changeValue: 3.1, valueFormat: 'percent-1', trend: [83.4, 84.2, 83.8, 85.1, 86, 85.6, 87.2, 86.8, 87.9, 88.4, 87.7, 88.6, 89.3, 92.4] },
   ],
   exceptionTrend: [
     { date: '5.26', order: 420, inventory: 360, logistics: 120, afterSale: 550, profit: 480 },
@@ -818,11 +819,18 @@ export const settings = {
 };
 
 export const dashboardStats = [
-  { label: '高风险订单', value: 23, change: '较昨日 +8', detail: '8 单即将超时', trend: [21, 25, 18, 29, 22, 27, 20, 34, 22, 27, 21, 39], tone: '#FF4D4F' },
-  { label: '即将缺货SKU', value: 37, change: '较昨日 +12', detail: '查看详情', trend: [20, 22, 24, 19, 26, 23, 20, 25, 22, 20, 23, 35], tone: '#FF4D4F' },
-  { label: '物流延误', value: 18, change: '较昨日 -5', detail: '查看详情', trend: [27, 30, 24, 32, 28, 24, 29, 25, 28, 36, 27, 31], tone: '#20C997' },
-  { label: '售后高发', value: 14, change: '较昨日 +3', detail: '查看详情', trend: [15, 17, 12, 18, 15, 12, 16, 13, 15, 23, 14, 18], tone: '#FF1F1F' },
-  { label: '潜在亏损', value: '¥32,560', change: '较昨日 -1,580', detail: '查看详情', trend: [26, 29, 23, 31, 27, 23, 28, 28, 35, 30, 39, 32], tone: '#20C997' },
+  { label: '高风险订单', value: 23, currentValue: 23, change: '较昨日 +8', changeValue: 8, valueFormat: 'integer', detail: '8 单即将超时', trend: [18, 21, 17, 22, 18, 20, 16, 24, 18, 21, 15, 23], tone: '#FF4D4F' },
+  { label: '即将缺货SKU', value: 37, currentValue: 37, change: '较昨日 +12', changeValue: 12, valueFormat: 'integer', detail: '查看详情', trend: [19, 22, 24, 20, 26, 23, 21, 27, 24, 22, 25, 37], tone: '#FF4D4F' },
+  { label: '物流延误', value: 18, currentValue: 18, change: '较昨日 -5', changeValue: -5, valueFormat: 'integer', detail: '查看详情', trend: [27, 30, 24, 32, 28, 24, 29, 25, 28, 31, 23, 18], tone: '#20C997' },
+  { label: '售后高发', value: 14, currentValue: 14, change: '较昨日 +3', changeValue: 3, valueFormat: 'integer', detail: '查看详情', trend: [12, 14, 10, 16, 13, 11, 15, 12, 14, 18, 11, 14], tone: '#FF1F1F' },
+  { label: '潜在亏损', value: '¥32,560', currentValue: 32560, change: '较昨日 -1,580', changeValue: -1580, valueFormat: 'currency', detail: '查看详情', trend: [33820, 34640, 33210, 34980, 34120, 32950, 34460, 34310, 35620, 34890, 34140, 32560], tone: '#20C997' },
+];
+
+export const inventoryMetricStats = [
+  { label: '7天内缺货', value: 128, currentValue: 128, change: '+17', changeValue: 17, valueFormat: 'integer', trend: [96, 101, 108, 99, 113, 106, 102, 115, 109, 103, 110, 122, 114, 107, 116, 120, 111, 128] },
+  { label: '14天内缺货', value: 243, currentValue: 243, change: '+32', changeValue: 32, valueFormat: 'integer', trend: [198, 205, 214, 201, 220, 212, 204, 196, 210, 206, 199, 218, 231, 217, 209, 225, 211, 243] },
+  { label: '库存滞销', value: 23, currentValue: 23, change: '-12', changeValue: -12, valueFormat: 'integer', trend: [42, 44, 39, 46, 41, 38, 43, 40, 36, 42, 48, 45, 39, 37, 41, 38, 35, 23] },
+  { label: '建议调拨', value: 98, currentValue: 98, change: '+9', changeValue: 9, valueFormat: 'integer', trend: [72, 75, 79, 73, 82, 78, 74, 70, 76, 73, 79, 85, 91, 84, 80, 87, 89, 98] },
 ];
 
 export const dashboardSuggestions = [
@@ -874,11 +882,93 @@ export const dashboardSuggestions = [
 ];
 
 export const systemMessages = [
-  { id: 'msg-001', content: 'AI生成了6条新的异常建议', time: '5分钟前' },
-  { id: 'msg-002', content: '订单AMZ-US-250601-001处理超时', time: '23分钟前' },
-  { id: 'msg-003', content: 'SKU库存预警，LA仓补货120件', time: '1小时前' },
-  { id: 'msg-004', content: '任务待确认#20260601001已完成待确认', time: '1小时前' },
-  { id: 'msg-005', content: '陈浩将对象TTS-US-250601-002分派至张晓', time: '2小时前' },
+  {
+    id: 'msg-001',
+    content: 'AI生成了6条新的异常建议',
+    detail: 'AI 已完成最新一轮异常扫描，生成 6 条可执行建议，请结合风险等级和置信度进行人工复核。',
+    category: 'AI建议',
+    time: '5分钟前',
+  },
+  {
+    id: 'msg-002',
+    content: '订单AMZ-US-250601-001处理超时',
+    detail: '该订单异常已超过处理 SLA，建议立即核对库存和发货仓，避免平台处罚。',
+    category: '订单',
+    time: '23分钟前',
+    target: { route: '/orders', state: { openOrderId: 'order-001' } },
+  },
+  {
+    id: 'msg-003',
+    content: 'SKU库存预警，LA仓补货120件',
+    detail: 'ELE-HEAD-01 当前库存无法覆盖补货周期，系统建议优先向 LA 仓补货。',
+    category: '库存',
+    time: '1小时前',
+    target: { route: '/inventory', state: { openSku: 'ELE-HEAD-01' } },
+  },
+  {
+    id: 'msg-004',
+    content: '任务待确认#20260601001已完成待确认',
+    detail: '负责人已提交处理凭证，请运营主管复核结果并确认是否关闭任务。',
+    category: '任务',
+    time: '1小时前',
+    target: { route: '/tasks', state: { detailTaskId: 'task-011' } },
+  },
+  {
+    id: 'msg-005',
+    content: '陈浩将对象TTS-US-250601-002分派至张晓',
+    detail: '物流延误任务的负责人已变更，请新负责人及时确认剩余 SLA 和处理计划。',
+    category: '任务',
+    time: '2小时前',
+    target: { route: '/tasks', state: { detailTaskId: 'task-003' } },
+  },
+  {
+    id: 'msg-006',
+    content: 'Shopee 地址异常订单等待买家确认',
+    detail: '买家地址中的邮编和城市不一致，客服已发送确认消息。',
+    category: '订单',
+    time: '3小时前',
+    target: { route: '/orders', state: { openOrderId: 'order-003' } },
+  },
+  {
+    id: 'msg-007',
+    content: 'NJ仓键盘库存进入高风险区间',
+    detail: 'ELE-KYB-01 可售天数低于安全阈值，请复核在途库存和补货建议。',
+    category: '库存',
+    time: '3小时前',
+    target: { route: '/inventory', state: { openSku: 'ELE-KYB-01' } },
+  },
+  {
+    id: 'msg-008',
+    content: '平台同步修复任务等待分派',
+    detail: 'eBay 回写失败任务尚未分派负责人，建议由平台运营优先处理。',
+    category: '任务',
+    time: '4小时前',
+    target: { route: '/tasks', state: { detailTaskId: 'task-005' } },
+  },
+  {
+    id: 'msg-009',
+    content: 'Shopify连接尚未完成授权',
+    detail: 'Shopify 店铺仍处于待授权状态，授权前不会参与数据完整度计算。',
+    category: '平台',
+    time: '5小时前',
+    target: { route: '/settings' },
+  },
+  {
+    id: 'msg-010',
+    content: 'Amazon退款异常已完成复核',
+    detail: '退款原因与物流轨迹已完成核对，相关订单异常可以进入关闭流程。',
+    category: '订单',
+    time: '6小时前',
+    target: { route: '/orders', state: { openOrderId: 'order-006' } },
+  },
+  {
+    id: 'msg-011',
+    content: '本周异常处理效率报告已生成',
+    detail: '最新数据复盘已生成，可查看异常趋势、AI建议效果和反复问题识别结果。',
+    category: '复盘',
+    time: '昨天',
+    target: { route: '/analytics' },
+  },
 ];
 
 const riskScores = { 高: 86, 中: 68, 低: 42, 滞销: 61, 调拨: 57 };
@@ -1003,8 +1093,11 @@ dashboardSuggestions.forEach((suggestion, index) => {
 systemMessages.unshift({
   id: 'msg-platform-ebay',
   content: 'eBay 数据已停止同步，当前缓存数据仅供参考',
+  detail: 'eBay 平台连接已中断，最后一次成功同步后的缓存数据可能与平台实时状态不一致。',
+  category: '平台',
   time: '23分钟前',
   tone: 'warning',
+  target: { route: '/settings' },
 });
 
 export const chartData = analytics;

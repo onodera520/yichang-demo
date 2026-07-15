@@ -4,9 +4,9 @@ import {
   Boxes,
   ChevronLeft,
   ChevronRight,
+  Download,
   RefreshCw,
   RotateCcw,
-  Search,
 } from 'lucide-react';
 import {
   CartesianGrid,
@@ -22,12 +22,14 @@ import AiEvidencePanel from '../components/common/AiEvidencePanel.jsx';
 import ConfirmActionDialog from '../components/common/ConfirmActionDialog.jsx';
 import DataFreshnessNotice from '../components/common/DataFreshnessNotice.jsx';
 import FilterSelect from '../components/common/FilterSelect.jsx';
+import MetricSparkline from '../components/common/MetricSparkline.jsx';
 import PageHeaderActionButton from '../components/common/PageHeaderActionButton.jsx';
 import PlatformLogo from '../components/common/PlatformLogo.jsx';
 import RiskExplanationPopover from '../components/common/RiskExplanationPopover.jsx';
 import LiveUpdateTime from '../components/LiveUpdateTime.jsx';
 import { useToast } from '../components/common/Toast.jsx';
 import { useRefreshTime } from '../hooks/useRefreshTime.js';
+import { inventoryMetricStats } from '../data/mockData.js';
 import stockout7Icon from '../assets/inventory-icons/stockout-7days.png';
 import stockout14Icon from '../assets/inventory-icons/stockout-14days.png';
 import slowMovingIcon from '../assets/inventory-icons/slow-moving.png';
@@ -44,45 +46,36 @@ import productPetFeederImage from '../assets/products/pet-feed-02.png';
 import { useDemoState } from '../state/DemoStateContext.jsx';
 import { useTopbarFilter } from '../state/TopbarFilterContext.jsx';
 import { getReplenishmentQuantity, requiresStaleDataConfirmation } from '../state/trustLayer.js';
+import { formatMetricValue } from '../utils/formatMetricValue.js';
+import { buildInventoryCsv } from './inventory/inventoryExport.js';
 
-const metricCards = [
+const metricCardVisuals = [
   {
-    label: '7天内缺货',
-    value: 128,
-    change: '+17',
     tone: '#FF3B3B',
     icon: stockout7Icon,
     filter: { availableDays: '7' },
-    trend: [18, 22, 26, 19, 30, 25, 20, 27, 23, 18, 24, 41, 29, 20, 25, 19, 38],
   },
   {
-    label: '14天内缺货',
-    value: 243,
-    change: '+32',
     tone: '#FF3B3B',
     icon: stockout14Icon,
     filter: { availableDays: '14' },
-    trend: [25, 28, 30, 24, 33, 29, 25, 21, 27, 24, 21, 27, 43, 32, 24, 28, 22, 40],
   },
   {
-    label: '库存滞销',
-    value: 23,
-    change: '-12',
     tone: '#20C997',
     icon: slowMovingIcon,
     filter: { riskLevel: '滞销' },
-    trend: [26, 28, 30, 24, 32, 29, 25, 30, 27, 24, 28, 40, 31, 25, 29, 42, 34, 27],
   },
   {
-    label: '建议调拨',
-    value: 98,
-    change: '+9',
     tone: '#FF3B3B',
     icon: transferIcon,
     filter: { riskLevel: '调拨' },
-    trend: [22, 24, 26, 21, 28, 25, 22, 19, 24, 22, 25, 30, 42, 33, 24, 27, 23, 39],
   },
 ];
+
+const metricCards = inventoryMetricStats.map((metric, index) => ({
+  ...metric,
+  ...metricCardVisuals[index],
+}));
 
 const riskStyles = {
   高: 'bg-[#FFEDEE] text-[#F04438]',
@@ -154,51 +147,12 @@ function matchesKeyword(fields, keyword) {
   return fields.some((field) => normalizeKeyword(field).includes(normalizedKeyword));
 }
 
-function Sparkline({ points, color }) {
-  const width = 260;
-  const height = 36;
-  const horizontalPadding = 3;
-  const min = Math.min(...points);
-  const max = Math.max(...points);
-  const range = max - min || 1;
-  const step = (width - horizontalPadding * 2) / (points.length - 1);
-  const coords = points.map((point, index) => {
-    const x = horizontalPadding + index * step;
-    const y = height - ((point - min) / range) * 27 - 4;
-    return [x, y];
-  });
-  const line = coords.map(([x, y], index) => `${index === 0 ? 'M' : 'L'}${x},${y}`).join(' ');
-  const area = `${line} L${width - horizontalPadding},${height} L${horizontalPadding},${height} Z`;
-  const id = `inventory-metric-${color.replace('#', '')}`;
-
-  return (
-    <div className="pointer-events-none absolute bottom-4 left-6 right-6 h-6">
-      <svg
-        aria-hidden="true"
-        className="h-full w-full"
-        viewBox={`0 0 ${width} ${height}`}
-        preserveAspectRatio="none"
-      >
-        <defs>
-          <linearGradient id={id} x1="0" x2="0" y1="0" y2="1">
-            <stop offset="0%" stopColor={color} stopOpacity="0.24" />
-            <stop offset="100%" stopColor={color} stopOpacity="0" />
-          </linearGradient>
-        </defs>
-        <path d={area} fill={`url(#${id})`} />
-        <path d={line} fill="none" stroke={color} strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.2" />
-        <circle cx={coords.at(-1)[0]} cy={coords.at(-1)[1]} r="2.5" fill="#fff" stroke={color} strokeWidth="2" />
-      </svg>
-    </div>
-  );
-}
-
-function InventoryMetricCard({ card, onDetail }) {
+function InventoryMetricCard({ card, index, onDetail }) {
   const positive = card.change.startsWith('+');
   const changeClass = positive ? 'text-[#FF2D2D]' : 'text-[#16C7A1]';
 
   return (
-    <article className="relative h-[160px] overflow-hidden rounded-[14px] border border-[#E8ECF3] bg-white px-6 py-4 shadow-[0_8px_24px_rgba(28,39,71,0.06)]">
+    <article className="metric-sparkline-card relative h-[160px] overflow-hidden rounded-[14px] border border-[#E8ECF3] bg-white px-6 py-4 shadow-[0_8px_24px_rgba(28,39,71,0.06)]">
       <div className="relative z-10">
         <div className="flex items-center gap-3">
           <div className="flex h-10 w-10 shrink-0 items-center justify-center">
@@ -219,7 +173,13 @@ function InventoryMetricCard({ card, onDetail }) {
           </button>
         </div>
       </div>
-      <Sparkline points={card.trend} color={card.tone} />
+      <MetricSparkline
+        animationDelay={index * 50}
+        color={card.tone}
+        formatValue={(value) => formatMetricValue(value, card.valueFormat)}
+        label={card.label}
+        points={card.trend}
+      />
     </article>
   );
 }
@@ -352,6 +312,23 @@ export default function Inventory() {
   const updateFilter = (key, value) => setFilters((current) => ({ ...current, [key]: value }));
   const resetFilters = () => setFilters({ platform: '', warehouse: '', riskLevel: '', availableDays: '' });
   const applyMetricFilter = (filter) => setFilters((current) => ({ ...current, ...filter }));
+  const exportInventory = () => {
+    if (!filteredRows.length) {
+      showToast({ message: '当前没有可导出的库存数据', type: 'info' });
+      return;
+    }
+
+    const blob = new Blob([buildInventoryCsv(filteredRows)], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `异常中枢-库存风险清单-${Date.now()}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+    showToast({ message: `已导出 ${filteredRows.length} 条库存风险数据`, type: 'success' });
+  };
   const openSkuDrawer = (row) => {
     setSelectedSku(row);
     setAdjustedQuantity(String(getReplenishmentQuantity(row)));
@@ -409,8 +386,8 @@ export default function Inventory() {
         </header>
 
         <div className="grid shrink-0 grid-cols-4 gap-3">
-          {metricCards.map((card) => (
-            <InventoryMetricCard key={card.label} card={card} onDetail={() => applyMetricFilter(card.filter)} />
+          {metricCards.map((card, index) => (
+            <InventoryMetricCard key={card.label} card={card} index={index} onDetail={() => applyMetricFilter(card.filter)} />
           ))}
         </div>
 
@@ -446,11 +423,12 @@ export default function Inventory() {
               重置
             </button>
             <button
-              className="flex h-10 min-w-[76px] items-center justify-center gap-2 rounded-[8px] bg-[#2F7BFF] px-4 text-sm font-semibold text-white shadow-[0_8px_18px_rgba(47,123,255,0.2)]"
+              className="flex h-10 min-w-[104px] items-center justify-center gap-2 rounded-[8px] border border-[#9CC0FF] bg-[#F5F9FF] px-4 text-sm font-semibold text-[#2F7BFF] transition hover:bg-[#EAF2FF]"
+              onClick={exportInventory}
               type="button"
             >
-              <Search className="h-4 w-4" />
-              筛选
+              <Download className="h-4 w-4" />
+              导出清单
             </button>
           </div>
         </section>
@@ -615,27 +593,27 @@ export default function Inventory() {
           </RiskExplanationPopover>
         ) : null}
         onClose={() => setSelectedSku(null)}
-        width={380}
+        width={450}
         topOffset={64}
         bodyClassName="bg-[#F5F7FB]"
         footer={
-          <div className="flex gap-2">
+          <div className="flex h-full items-center gap-3">
             <button
-              className="h-9 flex-1 rounded-[8px] border border-[#2F7BFF] bg-white px-2 text-xs font-semibold text-[#2F7BFF]"
+              className="h-10 flex-1 rounded-[8px] border border-[#2F7BFF] bg-white px-2 text-sm font-semibold text-[#2F7BFF]"
               onClick={handleModifyPurchase}
               type="button"
             >
               修改采购
             </button>
             <button
-              className="h-9 flex-1 rounded-[8px] border border-[#D9E1EE] bg-white px-2 text-xs font-semibold text-[#5F6B7A]"
+              className="h-10 flex-1 rounded-[8px] border border-[#D9E1EE] bg-white px-2 text-sm font-semibold text-[#5F6B7A]"
               onClick={handleRejectSuggestion}
               type="button"
             >
               驳回建议
             </button>
             <button
-              className="h-9 flex-1 rounded-[8px] bg-[#2F7BFF] px-2 text-xs font-semibold text-white shadow-[0_8px_18px_rgba(47,123,255,0.22)]"
+              className="h-10 flex-1 rounded-[8px] bg-[#2F7BFF] px-2 text-sm font-semibold text-white shadow-[0_8px_18px_rgba(47,123,255,0.22)]"
               onClick={handleCreateTask}
               type="button"
             >

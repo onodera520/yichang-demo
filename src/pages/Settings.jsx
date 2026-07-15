@@ -6,7 +6,7 @@ import { useToast } from '../components/common/Toast.jsx';
 import { settings } from '../data/mockData.js';
 import { useDemoState } from '../state/DemoStateContext.jsx';
 
-const slaRules = [
+const initialSlaRules = [
   { rule: '缺货导致订单取消', threshold: '>5单/日', severity: '高', responseLimit: '30分钟' },
   { rule: '物流延误', threshold: '>48小时', severity: '中', responseLimit: '2小时' },
   { rule: '地址异常', threshold: '>10单/日', severity: '中', responseLimit: '2小时' },
@@ -114,6 +114,116 @@ function ConnectModal({ onClose }) {
   );
 }
 
+function SlaRulesModal({ rules, onClose, onSave }) {
+  const [draftRules, setDraftRules] = useState(() => rules.map((rule) => ({ ...rule })));
+  const [errors, setErrors] = useState([]);
+
+  const updateRule = (index, field, value) => {
+    setDraftRules((current) => current.map((rule, ruleIndex) => (
+      ruleIndex === index ? { ...rule, [field]: value } : rule
+    )));
+    setErrors((current) => current.map((rowErrors, ruleIndex) => (
+      ruleIndex === index ? { ...rowErrors, [field]: '' } : rowErrors
+    )));
+  };
+
+  const submitRules = (event) => {
+    event.preventDefault();
+    const nextErrors = draftRules.map((rule) => ({
+      threshold: rule.threshold.trim() ? '' : '请输入阈值',
+      severity: rule.severity ? '' : '请选择严重级别',
+      responseLimit: rule.responseLimit.trim() ? '' : '请输入响应时限',
+    }));
+    const hasErrors = nextErrors.some((rowErrors) => Object.values(rowErrors).some(Boolean));
+
+    if (hasErrors) {
+      setErrors(nextErrors);
+      return;
+    }
+
+    onSave(draftRules.map((rule) => ({
+      ...rule,
+      threshold: rule.threshold.trim(),
+      responseLimit: rule.responseLimit.trim(),
+    })));
+  };
+
+  return (
+    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-[#12203A]/30 px-5">
+      <form
+        aria-labelledby="sla-rules-dialog-title"
+        aria-modal="true"
+        className="max-h-[86vh] w-[720px] max-w-full overflow-auto rounded-[14px] border border-[#E3E9F3] bg-white shadow-[0_20px_60px_rgba(20,33,61,0.22)]"
+        onSubmit={submitRules}
+        role="dialog"
+      >
+        <div className="flex h-[72px] items-center justify-between border-b border-[#E3E9F3] px-6">
+          <div>
+            <h3 className="text-[20px] font-semibold text-[#111827]" id="sla-rules-dialog-title">编辑SLA规则</h3>
+            <p className="mt-1 text-sm text-[#8A98B3]">修改异常规则的触发阈值、严重级别和响应时限</p>
+          </div>
+          <button aria-label="关闭SLA规则编辑弹窗" className="rounded-[8px] p-1.5 text-[#8A98B3] hover:bg-[#F3F6FB]" onClick={onClose} type="button">
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        <div className="px-6 py-5">
+          <div className="grid grid-cols-[1.45fr_1fr_0.9fr_1fr] gap-4 border-b border-[#E3E9F3] pb-3 text-sm font-semibold text-[#6F7F98]">
+            <div>规则项</div>
+            <div>阈值</div>
+            <div>严重级别</div>
+            <div>响应时限</div>
+          </div>
+          <div className="divide-y divide-[#E3E9F3]">
+            {draftRules.map((rule, index) => (
+              <div className="grid grid-cols-[1.45fr_1fr_0.9fr_1fr] items-start gap-4 py-4" key={rule.rule}>
+                <div className="flex h-10 items-center text-sm font-medium text-[#263246]">{rule.rule}</div>
+                <div>
+                  <input
+                    aria-invalid={Boolean(errors[index]?.threshold)}
+                    className={`h-10 w-full rounded-[8px] border px-3 text-sm text-[#263246] outline-none transition focus:border-[#2F7BFF] focus:ring-2 focus:ring-[#DCE9FF] ${errors[index]?.threshold ? 'border-[#F04438]' : 'border-[#D7DEE9]'}`}
+                    id={`sla-threshold-${index}`}
+                    onChange={(event) => updateRule(index, 'threshold', event.target.value)}
+                    value={rule.threshold}
+                  />
+                  {errors[index]?.threshold ? <p className="mt-1 text-xs text-[#F04438]">{errors[index].threshold}</p> : null}
+                </div>
+                <div>
+                  <select
+                    aria-invalid={Boolean(errors[index]?.severity)}
+                    className={`h-10 w-full rounded-[8px] border bg-white px-3 text-sm text-[#263246] outline-none transition focus:border-[#2F7BFF] focus:ring-2 focus:ring-[#DCE9FF] ${errors[index]?.severity ? 'border-[#F04438]' : 'border-[#D7DEE9]'}`}
+                    id={`sla-severity-${index}`}
+                    onChange={(event) => updateRule(index, 'severity', event.target.value)}
+                    value={rule.severity}
+                  >
+                    {['高', '中', '低'].map((level) => <option key={level} value={level}>{level}</option>)}
+                  </select>
+                  {errors[index]?.severity ? <p className="mt-1 text-xs text-[#F04438]">{errors[index].severity}</p> : null}
+                </div>
+                <div>
+                  <input
+                    aria-invalid={Boolean(errors[index]?.responseLimit)}
+                    className={`h-10 w-full rounded-[8px] border px-3 text-sm text-[#263246] outline-none transition focus:border-[#2F7BFF] focus:ring-2 focus:ring-[#DCE9FF] ${errors[index]?.responseLimit ? 'border-[#F04438]' : 'border-[#D7DEE9]'}`}
+                    id={`sla-response-limit-${index}`}
+                    onChange={(event) => updateRule(index, 'responseLimit', event.target.value)}
+                    value={rule.responseLimit}
+                  />
+                  {errors[index]?.responseLimit ? <p className="mt-1 text-xs text-[#F04438]">{errors[index].responseLimit}</p> : null}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="flex justify-end gap-3 border-t border-[#E3E9F3] px-6 py-4">
+          <button className="h-10 rounded-[8px] border border-[#D7DEE9] px-5 text-sm font-medium text-[#5F6B7A] hover:bg-[#F7F9FC]" onClick={onClose} type="button">取消</button>
+          <button className="h-10 rounded-[8px] bg-[#2F7BFF] px-5 text-sm font-medium text-white hover:bg-[#216BE8]" type="submit">保存规则</button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
 export default function Settings() {
   const { showToast } = useToast();
   const { platformConnections: connections, reconnectPlatform } = useDemoState();
@@ -127,6 +237,8 @@ export default function Settings() {
     systemMessage: settings.notificationSettings.systemMessage,
   });
   const [showConnectModal, setShowConnectModal] = useState(false);
+  const [showSlaEditor, setShowSlaEditor] = useState(false);
+  const [slaRules, setSlaRules] = useState(() => initialSlaRules.map((rule) => ({ ...rule })));
   const [storePage, setStorePage] = useState(1);
   const totalStorePages = Math.ceil(connectedStores.length / STORE_PAGE_SIZE);
   const pagedStores = useMemo(
@@ -146,6 +258,12 @@ export default function Settings() {
 
   const showActionToast = (action) => {
     showToast({ message: `${action}操作已触发`, type: 'info' });
+  };
+
+  const saveSlaRules = (nextRules) => {
+    setSlaRules(nextRules);
+    setShowSlaEditor(false);
+    showToast({ message: 'SLA规则已保存', type: 'success' });
   };
 
   return (
@@ -297,8 +415,8 @@ export default function Settings() {
           </SettingsCard>
         </div>
 
-        <div className="grid min-h-0 min-w-0 flex-1 gap-4" style={{ gridTemplateRows: '330px minmax(0, 1fr) 190px' }}>
-          <SettingsCard title="SLA规则" action={<button className="text-sm font-medium text-[#2F7BFF]" onClick={() => showActionToast('编辑')} type="button">编辑</button>}>
+        <div className="grid min-h-0 min-w-0 flex-1 gap-4" style={{ gridTemplateRows: '346px minmax(0, 1fr) 190px' }}>
+          <SettingsCard title="SLA规则" action={<button className="text-sm font-medium text-[#2F7BFF]" onClick={() => setShowSlaEditor(true)} type="button">编辑</button>}>
             <table className="w-full text-left">
               <thead className="bg-[#FAFBFD] text-sm font-semibold text-[#6F7F98]">
                 <tr>
@@ -352,6 +470,7 @@ export default function Settings() {
       </div>
 
       {showConnectModal ? <ConnectModal onClose={() => setShowConnectModal(false)} /> : null}
+      {showSlaEditor ? <SlaRulesModal onClose={() => setShowSlaEditor(false)} onSave={saveSlaRules} rules={slaRules} /> : null}
     </div>
   );
 }

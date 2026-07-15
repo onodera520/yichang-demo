@@ -5,7 +5,7 @@ const dashboardSource = readFileSync(new URL('./Dashboard.jsx', import.meta.url)
 
 assert.match(
   dashboardSource,
-  /const metricMarkerTones = \['#FF4D4F', '#FF8A00', '#20C997', '#6D35FF', '#20C997'\]/,
+  /const metricMarkerTones = \['#FF4D4F', '#FF8A00', '#20C997', '#FF1F1F', '#20C997'\]/,
   'each dashboard metric should have the reference marker color',
 );
 
@@ -29,18 +29,14 @@ assert.match(
 
 assert.match(
   dashboardSource,
-  /className="pointer-events-none absolute bottom-4 left-6 right-6 h-6"/,
-  'the sparkline should use a stable full-width wrapper with balanced bottom spacing',
+  /metric-sparkline-card relative h-\[160px\]/,
+  'dashboard metric cards should scope hover effects to the sparkline',
 );
 
 assert.match(
   dashboardSource,
-  /className="h-full w-full"/,
-  'the sparkline SVG should fill its wrapper',
+  /<MetricSparkline[\s\S]*animationDelay=\{index \* 50\}[\s\S]*markerColor=\{markerColor\}/,
+  'dashboard cards should use the shared sparkline with 50ms stagger and marker colors',
 );
 
-assert.match(
-  dashboardSource,
-  /const horizontalPadding = 3;/,
-  'the sparkline should reserve horizontal space for endpoint markers',
-);
+assert.doesNotMatch(dashboardSource, /preserveAspectRatio="none"/, 'dashboard cards should not stretch SVG geometry');

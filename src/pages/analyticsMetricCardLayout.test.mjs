@@ -35,17 +35,16 @@ assert.match(
 
 assert.match(
   source,
-  /className="pointer-events-none absolute bottom-4 left-6 right-6 h-6"/,
-  'analytics sparklines should preserve the shared full-width spacing',
+  /metric-sparkline-card relative h-\[160px\]/,
+  'analytics metric cards should scope hover effects to the sparkline',
 );
 
-assert.match(source, /className="h-full w-full"/, 'analytics sparkline SVG should fill its wrapper');
-assert.match(source, /const horizontalPadding = 3;/, 'analytics sparklines should reserve endpoint space');
 assert.match(
   source,
-  /<circle cx=\{coords\.at\(-1\)\[0\]\}/,
-  'analytics sparklines should render an endpoint marker',
+  /<MetricSparkline[\s\S]*animationDelay=\{index \* 50\}[\s\S]*label=\{item\.label\}/,
+  'analytics cards should use the shared sparkline with 50ms stagger',
 );
+assert.doesNotMatch(source, /preserveAspectRatio="none"/, 'analytics cards should not stretch SVG geometry');
 
 assert.match(
   source,

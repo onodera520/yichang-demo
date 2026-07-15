@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
   Check,
@@ -7,7 +7,6 @@ import {
   ChevronsUpDown,
   Clock3,
   RefreshCw,
-  Settings,
   Sparkles,
   UserRound,
 } from 'lucide-react';
@@ -37,9 +36,20 @@ import { useDemoState } from '../state/DemoStateContext.jsx';
 import { useTopbarFilter } from '../state/TopbarFilterContext.jsx';
 import { getRemainingSlaSeconds } from '../utils/sla.js';
 import { requiresStaleDataConfirmation } from '../state/trustLayer.js';
+import OrderToolbarActions from './orders/OrderToolbarActions.jsx';
+import OrderAdvancedFilterPopover from './orders/OrderAdvancedFilterPopover.jsx';
+import {
+  advancedFilterDefaults,
+  matchesOrderAdvancedFilters,
+} from './orders/orderAdvancedFilters.js';
+import {
+  ORDER_TABLE_SETTINGS_VERSION,
+  normalizeOrderTableSettings,
+} from './orders/orderTableSettings.js';
+import { groupSelectedOrders } from './orders/orderSelectionGroups.js';
+import { getCenteredIndicatorOffset } from './orders/tabIndicator.js';
 
 const tabs = ['全部', '地址异常', '缺货', '物流延误', '平台同步失败', '支付异常', '退款', '清关异常'];
-const defaultSelected = ['order-001', 'order-002', 'order-008'];
 
 const filterDefaults = {
   platform: '',
@@ -48,6 +58,7 @@ const filterDefaults = {
   riskLevel: '',
   owner: '',
   sla: '',
+  ...advancedFilterDefaults,
 };
 
 const skuProductImages = {
@@ -78,7 +89,34 @@ const skuProductNames = {
   'KID-LAMP-05': '儿童护眼学习台灯',
 };
 
-const ORDER_PAGE_SIZE = 11;
+const ORDER_PAGE_SIZE = 15;
+const orderColumnDefinitions = [
+  { key: 'riskLevel', label: '风险等级', width: 92 },
+  { key: 'abnormalType', label: '异常类型', width: 126 },
+  { key: 'orderNo', label: '订单号', width: 220 },
+  { key: 'store', label: '店铺', width: 112 },
+  { key: 'platform', label: '平台', width: 76 },
+  { key: 'country', label: '国家/地区', width: 104 },
+  { key: 'amount', label: '异常金额', width: 106 },
+  { key: 'remainingSLA', label: '剩余SLA', width: 106 },
+  { key: 'owner', label: '负责人', width: 92 },
+  { key: 'status', label: '状态', width: 84 },
+];
+const defaultOrderTableSettings = {
+  columns: orderColumnDefinitions.map((column) => column.key),
+  hidden: [],
+  density: 'standard',
+};
+const orderColumnLabels = Object.fromEntries(orderColumnDefinitions.map((column) => [column.key, column.label]));
+
+function loadOrderTableSettings() {
+  try {
+    const saved = JSON.parse(window.localStorage.getItem('orders-table-settings') || 'null');
+    return normalizeOrderTableSettings(saved, defaultOrderTableSettings);
+  } catch {
+    return defaultOrderTableSettings;
+  }
+}
 
 function getVisiblePages(currentPage, pageCount) {
   const start = Math.max(1, Math.min(currentPage - 2, pageCount - 4));
@@ -126,17 +164,79 @@ export default function Orders() {
   const navigate = useNavigate();
   const location = useLocation();
   const { showToast } = useToast();
-  const { createOrderTask, orders: rows, platformConnections, updateOrderStatus } = useDemoState();
+  const {
+    applyOrderTransaction,
+    createOrderTask,
+    tasks,
+    orders: rows,
+    platformConnections,
+    resetOrderData,
+    updateOrderStatus,
+  } = useDemoState();
   const { keyword: topbarKeyword, platform: topbarPlatform, store: topbarStore } = useTopbarFilter();
   const { refreshTime, refreshNow } = useRefreshTime();
   const slaClock = useSlaClock();
   const [activeTab, setActiveTab] = useState('全部');
   const [filters, setFilters] = useState(filterDefaults);
-  const [selectedIds, setSelectedIds] = useState(defaultSelected);
+  const [selectedIds, setSelectedIds] = useState([]);
   const [drawerOrderId, setDrawerOrderId] = useState(null);
   const [actionOpen, setActionOpen] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [pendingAction, setPendingAction] = useState(null);
+  const [tableSettings, setTableSettings] = useState(loadOrderTableSettings);
+  const [advancedFiltersOpen, setAdvancedFiltersOpen] = useState(false);
+  const tabListRef = useRef(null);
+  const tableScrollRef = useRef(null);
+  const tabButtonRefs = useRef(new Map());
+  const indicatorReadyRef = useRef(false);
+  const [tabIndicator, setTabIndicator] = useState({ x: 0, ready: false, animated: false });
+
+  useLayoutEffect(() => {
+    const tabList = tabListRef.current;
+    const activeButton = tabButtonRefs.current.get(activeTab);
+    if (!tabList || !activeButton) return undefined;
+
+    const updateIndicator = () => {
+      const x = getCenteredIndicatorOffset(activeButton.offsetLeft, activeButton.offsetWidth);
+      setTabIndicator((current) => (
+        current.x === x && current.ready
+          ? current
+          : { ...current, x, ready: true }
+      ));
+      indicatorReadyRef.current = true;
+    };
+
+    updateIndicator();
+
+    if (typeof ResizeObserver === 'undefined') {
+      window.addEventListener('resize', updateIndicator);
+      return () => window.removeEventListener('resize', updateIndicator);
+    }
+
+    const observer = new ResizeObserver(updateIndicator);
+    observer.observe(tabList);
+    observer.observe(activeButton);
+    return () => observer.disconnect();
+  }, [activeTab]);
+
+  useEffect(() => {
+    if (!tabIndicator.ready || tabIndicator.animated) return undefined;
+    const frame = window.requestAnimationFrame(() => {
+      if (indicatorReadyRef.current) {
+        setTabIndicator((current) => ({ ...current, animated: true }));
+      }
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [tabIndicator.animated, tabIndicator.ready]);
+
+  useEffect(() => {
+    window.localStorage.setItem('orders-table-settings', JSON.stringify({
+      version: ORDER_TABLE_SETTINGS_VERSION,
+      columns: tableSettings.columns,
+      hidden: tableSettings.hidden,
+      density: tableSettings.density,
+    }));
+  }, [tableSettings]);
 
   useEffect(() => {
     if (location.state?.abnormalType) {
@@ -161,6 +261,8 @@ export default function Orders() {
       riskLevel: ['高', '中', '低'],
       owner: uniqueOptions(rows, 'owner'),
       sla: ['2小时内', '2-6小时', '6小时以上'],
+      status: uniqueOptions(rows, 'status'),
+      relatedSku: uniqueOptions(rows, 'relatedSku'),
     }),
     [rows],
   );
@@ -178,6 +280,7 @@ export default function Orders() {
         (!filters.riskLevel || row.riskLevel === filters.riskLevel) &&
         (!filters.owner || row.owner === filters.owner) &&
         matchesLiveSlaFilter(row.remainingSLA, filters.sla, slaClock.nowMs, slaClock.anchorMs) &&
+        matchesOrderAdvancedFilters(row, filters) &&
         matchesKeyword(
           [
             row.orderNo,
@@ -205,7 +308,22 @@ export default function Orders() {
   const safePage = Math.min(currentPage, pageCount);
   const visibleRows = filteredRows.slice((safePage - 1) * ORDER_PAGE_SIZE, safePage * ORDER_PAGE_SIZE);
   const visiblePages = getVisiblePages(safePage, pageCount);
+
+  useEffect(() => {
+    tableScrollRef.current?.scrollTo({ top: 0 });
+  }, [activeTab, filters, safePage, topbarKeyword, topbarPlatform, topbarStore]);
+
   const allVisibleSelected = visibleRows.length > 0 && visibleRows.every((row) => selectedIds.includes(row.id));
+  const selectedOrders = rows.filter((row) => selectedIds.includes(row.id));
+  const selectionGroups = groupSelectedOrders(selectedOrders, visibleRows);
+  const visibleColumns = tableSettings.columns
+    .filter((key) => !tableSettings.hidden.includes(key))
+    .map((key) => orderColumnDefinitions.find((column) => column.key === key))
+    .filter(Boolean);
+  const tableSettingsConfig = useMemo(
+    () => ({ ...tableSettings, labels: orderColumnLabels, defaults: defaultOrderTableSettings }),
+    [tableSettings],
+  );
 
   const updateFilter = (key, value) => {
     setFilters((current) => ({ ...current, [key]: value }));
@@ -215,21 +333,14 @@ export default function Orders() {
     setSelectedIds((current) => (current.includes(id) ? current.filter((item) => item !== id) : [...current, id]));
   };
 
+  const clearSelection = () => setSelectedIds([]);
+
   const toggleVisibleRows = () => {
     setSelectedIds((current) => {
       const visibleIds = visibleRows.map((row) => row.id);
       if (allVisibleSelected) return current.filter((id) => !visibleIds.includes(id));
       return [...new Set([...current, ...visibleIds])];
     });
-  };
-
-  const handleBatchAssign = () => {
-    showToast({ message: `已批量分派 ${selectedIds.length} 个订单`, type: 'success' });
-  };
-
-  const handleMarkProcessing = () => {
-    selectedIds.forEach((id) => updateOrderStatus(id, '处理中'));
-    showToast({ message: '已标记为处理中', type: 'success' });
   };
 
   const handleAdoptSuggestion = (orderId) => {
@@ -299,23 +410,30 @@ export default function Orders() {
         </div>
       </header>
 
-      <nav className="orders-tabs mb-4 flex shrink-0 items-center">
-        {tabs.map((tab, index) => (
+      <nav ref={tabListRef} className="orders-tabs mb-4 flex shrink-0 items-center" role="tablist">
+        {tabs.map((tab) => (
           <button
             key={tab}
-            className={`orders-tab relative font-medium ${
+            ref={(node) => {
+              if (node) tabButtonRefs.current.set(tab, node);
+              else tabButtonRefs.current.delete(tab);
+            }}
+            aria-selected={activeTab === tab}
+            className={`orders-tab font-medium ${
               activeTab === tab ? 'text-[#2F7BFF]' : 'text-[#1D273B]'
             }`}
-            style={{ marginRight: index === tabs.length - 1 ? 0 : undefined }}
             onClick={() => setActiveTab(tab)}
+            role="tab"
             type="button"
           >
             {tab}
-            {activeTab === tab ? (
-              <span className="absolute bottom-0 left-0 h-1 w-8 rounded-full bg-[#2F7BFF]" />
-            ) : null}
           </button>
         ))}
+        <span
+          aria-hidden="true"
+          className={`orders-tab-indicator${tabIndicator.ready ? ' is-ready' : ''}${tabIndicator.animated ? ' is-animated' : ''}`}
+          style={{ transform: `translate3d(${tabIndicator.x}px, 0, 0)` }}
+        />
       </nav>
 
       <section className="orders-filter-panel mb-4 shrink-0 rounded-[10px] border border-[#DDE4EE] bg-white">
@@ -326,127 +444,97 @@ export default function Orders() {
           <OrderFilter label="风险等级" value={filters.riskLevel} options={filterOptions.riskLevel} onChange={(value) => updateFilter('riskLevel', value)} />
           <OrderFilter label="负责人" value={filters.owner} options={filterOptions.owner} onChange={(value) => updateFilter('owner', value)} />
           <OrderFilter label="剩余SLA" value={filters.sla} options={filterOptions.sla} onChange={(value) => updateFilter('sla', value)} />
-          <div className="flex flex-col justify-end">
-            <button className="orders-more-filter inline-flex items-center justify-center" type="button">
-              更多筛选
-            </button>
-          </div>
+          <OrderAdvancedFilterPopover
+            filters={filters}
+            onApply={(nextFilters) => setFilters((current) => ({ ...current, ...nextFilters }))}
+            onOpenChange={setAdvancedFiltersOpen}
+            open={advancedFiltersOpen}
+            skuOptions={filterOptions.relatedSku}
+            statusOptions={filterOptions.status}
+          />
         </div>
       </section>
 
-      <section className="mb-4 flex shrink-0 items-center justify-between">
-        <div className="flex items-center gap-3">
-          <span className="mr-2 text-sm text-[#344767]">已选择 {selectedIds.length} 项</span>
-          <ActionButton onClick={handleBatchAssign}>批量分派</ActionButton>
-          <ActionButton onClick={() => showToast({ message: '已批量转客服', type: 'success' })}>批量转客服</ActionButton>
-          <ActionButton onClick={handleMarkProcessing}>标记处理中</ActionButton>
-          <ActionButton icon={<ChevronRight className="h-4 w-4" />}>更多操作</ActionButton>
-        </div>
-        <div className="flex items-center gap-3">
-          <IconButton label="刷新">
-            <RefreshCw className="h-4 w-4" />
-            刷新
-          </IconButton>
-          <IconButton label="设置">
-            <Settings className="h-4 w-4" />
-            设置
-          </IconButton>
-        </div>
-      </section>
+      <OrderToolbarActions
+        allOrders={rows}
+        connections={platformConnections}
+        onCommit={applyOrderTransaction}
+        onClearSelection={clearSelection}
+        onRefresh={() => {
+          resetOrderData();
+          refreshNow();
+          setSelectedIds([]);
+          setDrawerOrderId(null);
+          setActionOpen(false);
+        }}
+        onSettingsChange={(next) => setTableSettings({ columns: next.columns, hidden: next.hidden, density: next.density })}
+        selectionGroups={selectionGroups}
+        selectedOrders={selectedOrders}
+        settings={tableSettingsConfig}
+        showToast={showToast}
+        tasks={tasks}
+      />
 
       <section className="orders-table-card">
         <div className="orders-table-shell">
-          <table className="orders-table">
-            <colgroup>
-              <col style={{ width: 42 }} />
-              <col style={{ width: 92 }} />
-              <col style={{ width: 126 }} />
-              <col style={{ width: 220 }} />
-              <col style={{ width: 112 }} />
-              <col style={{ width: 76 }} />
-              <col style={{ width: 104 }} />
-              <col style={{ width: 106 }} />
-              <col style={{ width: 106 }} />
-              <col style={{ width: 92 }} />
-              <col style={{ width: 84 }} />
-              <col style={{ width: 60 }} />
-            </colgroup>
-            <thead>
-              <tr>
-                <th>
-                  <Checkbox checked={allVisibleSelected} onChange={toggleVisibleRows} />
-                </th>
-                <TableHead>风险等级</TableHead>
-                <TableHead>异常类型</TableHead>
-                <TableHead>订单号</TableHead>
-                <TableHead>店铺</TableHead>
-                <TableHead>平台</TableHead>
-                <TableHead>国家/地区</TableHead>
-                <TableHead>异常金额</TableHead>
-                <TableHead>剩余SLA</TableHead>
-                <TableHead>负责人</TableHead>
-                <TableHead>状态</TableHead>
-                <TableHead>操作</TableHead>
-              </tr>
-            </thead>
-            <tbody>
-              {visibleRows.map((row) => {
-                const selected = selectedIds.includes(row.id);
-                const active = drawerOrderId === row.id;
-                return (
-                  <tr
-                    key={row.id}
-                    className={`orders-row ${selected ? 'orders-row-selected' : ''} ${active ? 'orders-row-active' : ''}`}
-                    onClick={() => openDrawer(row)}
-                    aria-current={active ? 'true' : undefined}
-                  >
-                    <td>
-                      <Checkbox checked={selected} onChange={() => toggleRow(row.id)} />
-                    </td>
-                    <td>
-                      <RiskExplanationPopover level={row.riskLevel} explanation={row.riskExplanation} />
-                    </td>
-                    <td className="truncate">{row.abnormalType}</td>
-                    <td className="truncate">
-                      <button
-                        className="orders-order-link truncate"
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          openDrawer(row);
-                        }}
-                        type="button"
-                      >
-                        {row.orderNo}
-                      </button>
-                    </td>
-                    <td className="truncate font-medium">{row.store}</td>
-                    <td>
-                      <PlatformLogo platform={row.platform} showName={false} size="sm" />
-                    </td>
-                    <td className="truncate">{row.country}</td>
-                    <td className="font-semibold">{formatCurrency(row.amount)}</td>
-                    <td className="font-medium">
-                      <SlaCountdown value={row.remainingSLA} {...slaClock} />
-                    </td>
-                    <td className="truncate">{row.owner}</td>
-                    <td className={statusClass(row.status)}>{row.status}</td>
-                    <td>
-                      <button
-                        className="font-medium text-[#2F7BFF]"
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          openDrawer(row);
-                        }}
-                        type="button"
-                      >
-                        查看
-                      </button>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+          <div ref={tableScrollRef} className="orders-table-scroll">
+            <table className="orders-table">
+              <colgroup>
+                <col style={{ width: 42 }} />
+                {visibleColumns.map((column) => <col key={column.key} style={{ width: column.width }} />)}
+                <col style={{ width: 60 }} />
+              </colgroup>
+              <thead>
+                <tr>
+                  <th>
+                    <Checkbox checked={allVisibleSelected} onChange={toggleVisibleRows} />
+                  </th>
+                  {visibleColumns.map((column) => <TableHead key={column.key}>{column.label}</TableHead>)}
+                  <TableHead>操作</TableHead>
+                </tr>
+              </thead>
+              <tbody>
+                {visibleRows.map((row) => {
+                  const selected = selectedIds.includes(row.id);
+                  const active = drawerOrderId === row.id;
+                  return (
+                    <tr
+                      key={row.id}
+                      className={`orders-row ${selected ? 'orders-row-selected' : ''} ${active ? 'orders-row-active' : ''}`}
+                      onClick={() => openDrawer(row)}
+                      aria-current={active ? 'true' : undefined}
+                    >
+                      <td style={tableSettings.density === 'compact' ? { height: 48 } : undefined}>
+                        <Checkbox checked={selected} onChange={() => toggleRow(row.id)} />
+                      </td>
+                      {visibleColumns.map((column) => (
+                        <OrderTableCell
+                          key={column.key}
+                          columnKey={column.key}
+                          compact={tableSettings.density === 'compact'}
+                          onOpen={() => openDrawer(row)}
+                          row={row}
+                          slaClock={slaClock}
+                        />
+                      ))}
+                      <td style={tableSettings.density === 'compact' ? { height: 48 } : undefined}>
+                        <button
+                          className="font-medium text-[#2F7BFF]"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            openDrawer(row);
+                          }}
+                          type="button"
+                        >
+                          查看
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
 
           <div className="orders-pagination">
             <span>共 {filteredRows.length} 条</span>
@@ -555,29 +643,25 @@ function OrderFilter({ label, value, options, onChange, wide = false }) {
   );
 }
 
-function ActionButton({ children, onClick, icon }) {
-  return (
-    <button
-      className="inline-flex h-10 items-center justify-center gap-2 rounded-[6px] border border-[#D7DEE9] bg-white px-4 text-sm font-semibold text-[#263246] shadow-[0_2px_8px_rgba(28,39,71,0.03)] hover:border-[#B9C4D4]"
-      onClick={onClick}
-      type="button"
-    >
-      {children}
-      {icon}
-    </button>
-  );
-}
-
-function IconButton({ children, label }) {
-  return (
-    <button
-      className="inline-flex h-10 items-center gap-2 rounded-[6px] border border-[#D7DEE9] bg-white px-3 text-sm font-semibold text-[#263246] shadow-[0_2px_8px_rgba(28,39,71,0.03)] hover:border-[#B9C4D4]"
-      aria-label={label}
-      type="button"
-    >
-      {children}
-    </button>
-  );
+function OrderTableCell({ columnKey, compact, onOpen, row, slaClock }) {
+  const style = compact ? { height: 48 } : undefined;
+  if (columnKey === 'riskLevel') return <td style={style}><RiskExplanationPopover level={row.riskLevel} explanation={row.riskExplanation} /></td>;
+  if (columnKey === 'abnormalType') return <td className="truncate" style={style}>{row.abnormalType}</td>;
+  if (columnKey === 'orderNo') {
+    return (
+      <td className="truncate" style={style}>
+        <button className="orders-order-link truncate" onClick={(event) => { event.stopPropagation(); onOpen(); }} type="button">{row.orderNo}</button>
+      </td>
+    );
+  }
+  if (columnKey === 'store') return <td className="truncate font-medium" style={style}>{row.store}</td>;
+  if (columnKey === 'platform') return <td style={style}><PlatformLogo platform={row.platform} showName={false} size="sm" /></td>;
+  if (columnKey === 'country') return <td className="truncate" style={style}>{row.country}</td>;
+  if (columnKey === 'amount') return <td className="font-semibold" style={style}>{formatCurrency(row.amount)}</td>;
+  if (columnKey === 'remainingSLA') return <td className="font-medium" style={style}><SlaCountdown value={row.remainingSLA} {...slaClock} /></td>;
+  if (columnKey === 'owner') return <td className="truncate" style={style}>{row.owner}</td>;
+  if (columnKey === 'status') return <td className={statusClass(row.status)} style={style}>{row.status}</td>;
+  return null;
 }
 
 function Checkbox({ checked, onChange }) {

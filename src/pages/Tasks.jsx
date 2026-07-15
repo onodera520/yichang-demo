@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import {
   AlertCircle,
@@ -25,13 +25,12 @@ import TaskCompletionModal from '../components/common/TaskCompletionModal.jsx';
 import TaskCreateModal from '../components/common/TaskCreateModal.jsx';
 import LiveUpdateTime from '../components/LiveUpdateTime.jsx';
 import { useToast } from '../components/common/Toast.jsx';
-import { tasks as mockTasks } from '../data/mockData.js';
 import { useRefreshTime } from '../hooks/useRefreshTime.js';
 import { useSlaClock } from '../hooks/useSlaClock.js';
 import { useDemoState } from '../state/DemoStateContext.jsx';
 import { useTopbarFilter } from '../state/TopbarFilterContext.jsx';
 import { getTaskSlaPresentation, isTaskSlaOverdue } from '../state/taskSla.js';
-import { buildCompletionPatch, hasTaskSource } from '../state/trustLayer.js';
+import { hasTaskSource } from '../state/trustLayer.js';
 import {
   buildBatchTaskPatch,
   buildTasksCsv,
@@ -39,8 +38,8 @@ import {
   calculateTeamTaskOverview,
   resolveExportTasks,
   sortTasksByDeadline,
-  updateTasksByIds,
 } from '../state/taskOperations.js';
+import { getCenteredIndicatorOffset } from './orders/tabIndicator.js';
 
 const tabs = ['全部', '待分派', '已分派', '处理中', '待确认', '已完成', '已超时', '已升级'];
 const owners = ['王敏', '赵宁', '陈浩', '刘畅', '周扬', '张磊', '李娜', '未分派'];
@@ -527,22 +526,25 @@ export default function Tasks() {
   const location = useLocation();
   const { showToast } = useToast();
   const {
-    completeTask: completeGeneratedTask,
+    completeTask,
     createManualTask,
-    generatedTasks,
     inventory,
     orders,
-    updateGeneratedTask,
-    updateGeneratedTasks,
+    tasks,
+    updateTask: updateTaskState,
+    updateTasks: updateTasksState,
   } = useDemoState();
   const { keyword: topbarKeyword } = useTopbarFilter();
   const { refreshTime, refreshNow } = useRefreshTime();
   const slaClock = useSlaClock();
-  const [taskRows, setTaskRows] = useState(() => mockTasks);
   const [activeTab, setActiveTab] = useState('全部');
+  const tabListRef = useRef(null);
+  const tabButtonRefs = useRef(new Map());
+  const indicatorReadyRef = useRef(false);
+  const [tabIndicator, setTabIndicator] = useState({ x: 0, ready: false, animated: false });
   const [filters, setFilters] = useState({ owner: '全部', source: '全部', risk: '全部', deadline: '全部' });
-  const [selectedTaskId, setSelectedTaskId] = useState(() => location.state?.detailTaskId ?? location.state?.highlightTaskId ?? mockTasks[0]?.id);
-  const [selectedIds, setSelectedIds] = useState(() => [location.state?.highlightTaskId ?? location.state?.detailTaskId ?? mockTasks[0]?.id].filter(Boolean));
+  const [selectedTaskId, setSelectedTaskId] = useState(() => location.state?.detailTaskId ?? location.state?.highlightTaskId ?? tasks[0]?.id);
+  const [selectedIds, setSelectedIds] = useState(() => [location.state?.highlightTaskId ?? location.state?.detailTaskId ?? tasks[0]?.id].filter(Boolean));
   const [transferOpen, setTransferOpen] = useState(false);
   const [transferMode, setTransferMode] = useState('single');
   const [transferOwner, setTransferOwner] = useState('王敏');
@@ -552,7 +554,45 @@ export default function Tasks() {
   const [bulkConfirmAction, setBulkConfirmAction] = useState(null);
   const [sortDirection, setSortDirection] = useState(null);
 
-  const allTaskRows = useMemo(() => [...generatedTasks, ...taskRows], [generatedTasks, taskRows]);
+  const allTaskRows = tasks;
+
+  useLayoutEffect(() => {
+    const tabList = tabListRef.current;
+    const activeButton = tabButtonRefs.current.get(activeTab);
+    if (!tabList || !activeButton) return undefined;
+
+    const updateIndicator = () => {
+      const x = getCenteredIndicatorOffset(activeButton.offsetLeft, activeButton.offsetWidth);
+      setTabIndicator((current) => (
+        current.x === x && current.ready
+          ? current
+          : { ...current, x, ready: true }
+      ));
+      indicatorReadyRef.current = true;
+    };
+
+    updateIndicator();
+
+    if (typeof ResizeObserver === 'undefined') {
+      window.addEventListener('resize', updateIndicator);
+      return () => window.removeEventListener('resize', updateIndicator);
+    }
+
+    const observer = new ResizeObserver(updateIndicator);
+    observer.observe(tabList);
+    observer.observe(activeButton);
+    return () => observer.disconnect();
+  }, [activeTab]);
+
+  useEffect(() => {
+    if (!tabIndicator.ready || tabIndicator.animated) return undefined;
+    const frame = window.requestAnimationFrame(() => {
+      if (indicatorReadyRef.current) {
+        setTabIndicator((current) => ({ ...current, animated: true }));
+      }
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [tabIndicator.animated, tabIndicator.ready]);
 
   useEffect(() => {
     const incomingTaskId = location.state?.detailTaskId ?? location.state?.highlightTaskId;
@@ -595,8 +635,7 @@ export default function Tasks() {
   const updateTask = (patch, toastMessage) => {
     if (!selectedTask) return;
     const applyPatch = (task) => ({ ...task, ...patch, processLogs: [...task.processLogs, { time: '刚刚', owner: task.owner === '未分派' ? '系统' : task.owner, action: patch.status === '已完成' ? '完成任务' : patch.status === '已升级' ? '升级主管' : '更新任务', detail: toastMessage, tone: patch.status === '已升级' ? 'red' : 'green' }] });
-    if (selectedTask.sourceKind) { updateGeneratedTask(selectedTask.id, applyPatch); showToast({ message: toastMessage, type: patch.status === '已升级' ? 'info' : 'success' }); return; }
-    setTaskRows((current) => current.map((task) => (task.id === selectedTask.id ? applyPatch(task) : task)));
+    updateTaskState(selectedTask.id, applyPatch);
     showToast({ message: toastMessage, type: patch.status === '已升级' ? 'info' : 'success' });
   };
   const submitCompletion = (evidence) => {
@@ -607,14 +646,12 @@ export default function Tasks() {
         showToast({ message: '来源对象未同步，暂时无法完成任务', type: 'error' });
         return;
       }
-      completeGeneratedTask(selectedTask.id, evidence);
+      completeTask(selectedTask.id, evidence);
       setCompletionOpen(false);
       showToast({ message: evidence.resolvedSource ? '任务已完成，对应异常状态已同步' : '任务已完成，原异常保持处理中', type: 'success' });
       return;
     }
-    setTaskRows((current) => current.map((task) => (
-      task.id === selectedTask.id ? { ...task, ...buildCompletionPatch(task, evidence) } : task
-    )));
+    completeTask(selectedTask.id, evidence);
     setCompletionOpen(false);
     showToast({ message: '任务已完成，处理凭证已记录', type: 'success' });
   };
@@ -627,8 +664,7 @@ export default function Tasks() {
   const applyBatchAction = (action, payload, successMessage) => {
     const updater = buildBatchTaskPatch(action, payload);
     const ids = selectedTaskRows.map((task) => task.id);
-    setTaskRows((current) => updateTasksByIds(current, ids, updater));
-    updateGeneratedTasks(ids, updater);
+    updateTasksState(ids, updater);
     setSelectedIds([]);
     setBulkConfirmAction(null);
     showToast({ message: `${successMessage}，共 ${ids.length} 条`, type: action === 'upgrade' ? 'info' : 'success' });
@@ -652,8 +688,7 @@ export default function Tasks() {
     }
     if (!selectedTask) return;
     const applyTransfer = (task) => ({ ...task, owner: transferOwner, status: task.status === '待分派' ? '已分派' : task.status, processLogs: [...task.processLogs, { time: '刚刚', owner: '系统', action: '转交任务', detail: `已转交给 ${transferOwner}`, tone: 'green' }] });
-    if (selectedTask.sourceKind) { updateGeneratedTask(selectedTask.id, applyTransfer); setTransferOpen(false); showToast({ message: `已转交给 ${transferOwner}`, type: 'success' }); return; }
-    setTaskRows((current) => current.map((task) => (task.id === selectedTask.id ? applyTransfer(task) : task)));
+    updateTaskState(selectedTask.id, applyTransfer);
     setTransferOpen(false);
     showToast({ message: `已转交给 ${transferOwner}`, type: 'success' });
   };
@@ -707,7 +742,29 @@ export default function Tasks() {
       </header>
       <div className="grid min-h-0 flex-1 gap-4" style={{ gridTemplateColumns: 'minmax(0, 1fr) 405px' }}>
         <div className="flex min-h-0 flex-col">
-          <nav className="mb-3 flex shrink-0 items-center" style={{ columnGap: 56 }}>{tabs.map((tab) => (<button key={tab} className={`relative h-9 text-[15px] font-medium ${activeTab === tab ? 'text-[#2F7BFF]' : 'text-[#1D273B]'}`} onClick={() => setActiveTab(tab)} type="button">{tab}{activeTab === tab ? <span className="absolute bottom-0 left-0 h-1 w-8 rounded-full bg-[#2F7BFF]" /> : null}</button>))}</nav>
+          <nav ref={tabListRef} className="relative mb-3 flex shrink-0 items-center" style={{ columnGap: 56 }} role="tablist">
+            {tabs.map((tab) => (
+              <button
+                key={tab}
+                ref={(node) => {
+                  if (node) tabButtonRefs.current.set(tab, node);
+                  else tabButtonRefs.current.delete(tab);
+                }}
+                aria-selected={activeTab === tab}
+                className={`relative h-9 text-[15px] font-medium transition-colors duration-200 ${activeTab === tab ? 'text-[#2F7BFF]' : 'text-[#1D273B]'}`}
+                onClick={() => setActiveTab(tab)}
+                role="tab"
+                type="button"
+              >
+                {tab}
+              </button>
+            ))}
+            <span
+              aria-hidden="true"
+              className={`orders-tab-indicator${tabIndicator.ready ? ' is-ready' : ''}${tabIndicator.animated ? ' is-animated' : ''}`}
+              style={{ transform: `translate3d(${tabIndicator.x}px, 0, 0)` }}
+            />
+          </nav>
           <section className="mb-4 flex shrink-0 items-end gap-7"><FilterBox label="负责人" value={filters.owner} options={['全部', ...owners]} onChange={(value) => setFilters((current) => ({ ...current, owner: value }))} /><FilterBox label="异常来源" value={filters.source} options={sources} onChange={(value) => setFilters((current) => ({ ...current, source: value }))} /><FilterBox label="风险等级" value={filters.risk} options={risks} onChange={(value) => setFilters((current) => ({ ...current, risk: value }))} /><DeadlineFilter value={filters.deadline} onChange={(value) => setFilters((current) => ({ ...current, deadline: value }))} /><div className="flex flex-col"><span aria-hidden="true" className="mb-1.5 block h-5" /><button className="h-10 min-w-[104px] rounded-[7px] border border-[#D7DEE9] bg-white px-7 text-sm font-semibold text-[#263246]" type="button">更多筛选</button></div><div className="flex flex-col"><span aria-hidden="true" className="mb-1.5 block h-5" /><button className="h-10 min-w-[76px] rounded-[7px] border border-[#D7DEE9] bg-white px-7 text-sm font-semibold text-[#263246]" onClick={resetFilters} type="button">重置</button></div></section>
           <TaskTable
             rows={pagedTasks}
