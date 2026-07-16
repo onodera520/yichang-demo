@@ -9,6 +9,7 @@ test('topbar badge uses shared visible messages and real unread count', () => {
   assert.match(source, /getNotificationPreview/);
   assert.match(source, /getUnreadMessageCount/);
   assert.match(source, /formatNotificationBadgeCount/);
+  assert.match(source, /unreadCount=\{unreadCount\}/);
   assert.doesNotMatch(source, />\s*7\s*</);
 });
 

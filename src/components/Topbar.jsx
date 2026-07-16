@@ -147,6 +147,7 @@ export default function Topbar() {
               onNavigateTarget={navigateToMessageTarget}
               onViewAll={viewAllMessages}
               readMessageIds={readMessageIds}
+              unreadCount={unreadCount}
             />
           ) : null}
         </div>

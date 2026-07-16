@@ -9,9 +9,10 @@ export default function NotificationPopover({
   onMarkAllRead,
   onNavigateTarget,
   onViewAll,
+  unreadCount: unreadCountProp,
 }) {
   const [expandedMessageId, setExpandedMessageId] = useState(null);
-  const unreadCount = getUnreadMessageCount(messages, readMessageIds);
+  const unreadCount = unreadCountProp ?? getUnreadMessageCount(messages, readMessageIds);
 
   const toggleMessage = (message) => {
     onMarkRead(message.id);

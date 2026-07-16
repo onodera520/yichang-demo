@@ -10,6 +10,8 @@ test('notification popover renders the compact message-center structure', () => 
 
   assert.match(source, /aria-label="消息通知"/);
   assert.match(source, /w-\[380px\]/);
+  assert.match(source, /unreadCount: unreadCountProp/);
+  assert.match(source, /const unreadCount = unreadCountProp \?\?/);
   assert.match(source, /全部已读/);
   assert.match(source, /查看全部消息/);
   assert.match(source, /暂无消息/);
