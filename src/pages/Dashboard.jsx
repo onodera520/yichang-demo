@@ -1,5 +1,5 @@
 ﻿import React from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import {
   ArrowDown,
   ArrowDownUp,
@@ -46,6 +46,7 @@ import { calculateDataCompleteness } from '../state/trustLayer.js';
 import {
   filterDashboardMessages,
   getDashboardTodoGroups,
+  getVisibleSystemMessages,
 } from '../state/dashboardInbox.js';
 import { getTaskSlaPresentation } from '../state/taskSla.js';
 import { useTopbarFilter } from '../state/TopbarFilterContext.jsx';
@@ -583,6 +584,7 @@ function MessageDrawerContent({
 }
 
 export default function Dashboard() {
+  const location = useLocation();
   const navigate = useNavigate();
   const { showToast } = useToast();
   const {
@@ -602,14 +604,29 @@ export default function Dashboard() {
   const [todoFilter, setTodoFilter] = React.useState('all');
   const [messageFilter, setMessageFilter] = React.useState('all');
   const [expandedMessageId, setExpandedMessageId] = React.useState(null);
+
+  React.useEffect(() => {
+    if (location.state?.openUtility !== 'messages') return;
+
+    setSelectedSuggestion(null);
+    setMessageFilter('all');
+    setExpandedMessageId(null);
+    setUtilityDrawer('messages');
+
+    const { openUtility, ...remainingState } = location.state;
+    void openUtility;
+    navigate(location.pathname, {
+      replace: true,
+      state: Object.keys(remainingState).length ? remainingState : null,
+    });
+  }, [location.pathname, location.state, navigate]);
+
   const dataCompleteness = React.useMemo(
     () => calculateDataCompleteness(platformConnections),
     [platformConnections],
   );
   const visibleSystemMessages = React.useMemo(
-    () => platformConnections.some((connection) => connection.platform === 'eBay' && connection.isStale)
-      ? systemMessages
-      : systemMessages.filter((message) => message.id !== 'msg-platform-ebay'),
+    () => getVisibleSystemMessages(systemMessages, platformConnections),
     [platformConnections],
   );
   const todoGroups = React.useMemo(
