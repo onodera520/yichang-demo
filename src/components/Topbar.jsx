@@ -1,7 +1,16 @@
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Bell, ChevronRight, CircleHelp, Search } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import zhangXiaoAvatar from '../assets/avatars/zhang-xiao.png';
 import FilterSelect from './common/FilterSelect.jsx';
+import NotificationPopover from './common/NotificationPopover.jsx';
+import { systemMessages } from '../data/mockData.js';
+import {
+  formatNotificationBadgeCount,
+  getNotificationPreview,
+  getUnreadMessageCount,
+  getVisibleSystemMessages,
+} from '../state/dashboardInbox.js';
 import { useDemoState } from '../state/DemoStateContext.jsx';
 import { useTopbarFilter } from '../state/TopbarFilterContext.jsx';
 
@@ -29,7 +38,18 @@ function TopbarSelect({ label, value, allLabel, options, onChange }) {
 }
 
 export default function Topbar() {
-  const { inventory, orders } = useDemoState();
+  const {
+    inventory,
+    markAllMessagesRead,
+    markMessageRead,
+    orders,
+    platformConnections,
+    readMessageIds,
+  } = useDemoState();
+  const navigate = useNavigate();
+  const [notificationOpen, setNotificationOpen] = useState(false);
+  const notificationRootRef = useRef(null);
+  const bellButtonRef = useRef(null);
   const { keyword, platform, setKeyword, setPlatform, setStore, store } = useTopbarFilter();
 
   const platformOptions = useMemo(
@@ -37,6 +57,49 @@ export default function Topbar() {
     [inventory, orders],
   );
   const storeOptions = useMemo(() => uniqueValues(orders.map((item) => item.store)), [orders]);
+  const visibleMessages = useMemo(
+    () => getVisibleSystemMessages(systemMessages, platformConnections),
+    [platformConnections],
+  );
+  const previewMessages = useMemo(
+    () => getNotificationPreview(visibleMessages),
+    [visibleMessages],
+  );
+  const unreadCount = getUnreadMessageCount(visibleMessages, readMessageIds);
+
+  useEffect(() => {
+    if (!notificationOpen) return undefined;
+
+    const handlePointerDown = (event) => {
+      if (!notificationRootRef.current?.contains(event.target)) {
+        setNotificationOpen(false);
+      }
+    };
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') {
+        setNotificationOpen(false);
+        bellButtonRef.current?.focus();
+      }
+    };
+
+    document.addEventListener('pointerdown', handlePointerDown);
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDown);
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [notificationOpen]);
+
+  const navigateToMessageTarget = (message) => {
+    markMessageRead(message.id);
+    setNotificationOpen(false);
+    navigate(message.target.route, { state: message.target.state });
+  };
+
+  const viewAllMessages = () => {
+    setNotificationOpen(false);
+    navigate('/dashboard', { state: { openUtility: 'messages' } });
+  };
 
   return (
     <header className="relative z-20 flex h-16 shrink-0 items-center border-b border-[#E5EAF2] bg-white px-7 shadow-[0_2px_10px_rgba(16,24,40,0.055)]">
@@ -58,12 +121,35 @@ export default function Topbar() {
       </div>
 
       <div className="flex items-center gap-5">
-        <button className="relative flex h-9 w-9 items-center justify-center rounded-full text-[#5F6B7A] hover:bg-[#F3F7FD]" type="button">
-          <Bell className="h-5 w-5" />
-          <span className="absolute right-0.5 top-0 flex h-4 min-w-4 items-center justify-center rounded-full bg-[#FF2D2D] px-1 text-[10px] font-semibold leading-none text-white">
-            7
-          </span>
-        </button>
+        <div className="relative" ref={notificationRootRef}>
+          <button
+            aria-expanded={notificationOpen}
+            aria-haspopup="dialog"
+            aria-label={`消息通知，${unreadCount} 条未读`}
+            className="relative flex h-9 w-9 items-center justify-center rounded-full text-[#5F6B7A] hover:bg-[#F3F7FD]"
+            onClick={() => setNotificationOpen((open) => !open)}
+            ref={bellButtonRef}
+            type="button"
+          >
+            <Bell className="h-5 w-5" />
+            {unreadCount > 0 ? (
+              <span className="absolute right-0 top-0 flex h-4 min-w-4 items-center justify-center rounded-full bg-[#FF2D2D] px-1 text-[10px] font-semibold leading-none text-white">
+                {formatNotificationBadgeCount(unreadCount)}
+              </span>
+            ) : null}
+          </button>
+
+          {notificationOpen ? (
+            <NotificationPopover
+              messages={previewMessages}
+              onMarkAllRead={() => markAllMessagesRead(visibleMessages.map((message) => message.id))}
+              onMarkRead={markMessageRead}
+              onNavigateTarget={navigateToMessageTarget}
+              onViewAll={viewAllMessages}
+              readMessageIds={readMessageIds}
+            />
+          ) : null}
+        </div>
         <button className="flex h-9 w-9 items-center justify-center rounded-full text-[#5F6B7A] hover:bg-[#F3F7FD]" type="button">
           <CircleHelp className="h-5 w-5" />
         </button>
