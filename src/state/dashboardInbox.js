@@ -1,5 +1,13 @@
 import { getTaskSlaPresentation } from './taskSla.js';
 
+const STALE_PLATFORM_MESSAGE_ID = 'msg-platform-ebay';
+
+function toReadIdSet(readMessageIds) {
+  return readMessageIds instanceof Set
+    ? readMessageIds
+    : new Set(readMessageIds ?? []);
+}
+
 function isCompletedTask(task) {
   return task.status === '已完成';
 }
@@ -35,8 +43,34 @@ export function getDashboardTodoGroups(tasks, nowMs = Date.now(), anchorMs = now
 
 export function filterDashboardMessages(messages, readMessageIds, filter = 'all') {
   if (filter !== 'unread') return messages;
-  const readIds = readMessageIds instanceof Set ? readMessageIds : new Set(readMessageIds);
+  const readIds = toReadIdSet(readMessageIds);
   return messages.filter((message) => !readIds.has(message.id));
+}
+
+export function getVisibleSystemMessages(messages, platformConnections) {
+  const ebayConnectionIsStale = (platformConnections ?? []).some(
+    (connection) => connection.platform === 'eBay' && connection.isStale,
+  );
+
+  return ebayConnectionIsStale
+    ? messages
+    : messages.filter((message) => message.id !== STALE_PLATFORM_MESSAGE_ID);
+}
+
+export function getNotificationPreview(messages, limit = 5) {
+  return messages.slice(0, Math.max(0, limit));
+}
+
+export function getUnreadMessageCount(messages, readMessageIds) {
+  const readIds = toReadIdSet(readMessageIds);
+  return messages.reduce(
+    (count, message) => count + (readIds.has(message.id) ? 0 : 1),
+    0,
+  );
+}
+
+export function formatNotificationBadgeCount(count) {
+  return count > 99 ? '99+' : String(Math.max(0, count));
 }
 
 export function mergeReadMessageIds(currentIds, messageIds) {

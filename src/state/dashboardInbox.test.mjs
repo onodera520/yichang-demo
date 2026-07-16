@@ -1,7 +1,11 @@
 import assert from 'node:assert/strict';
 import {
   filterDashboardMessages,
+  formatNotificationBadgeCount,
   getDashboardTodoGroups,
+  getNotificationPreview,
+  getUnreadMessageCount,
+  getVisibleSystemMessages,
   mergeReadMessageIds,
 } from './dashboardInbox.js';
 import { systemMessages } from '../data/mockData.js';
@@ -64,6 +68,41 @@ assert.deepEqual(
   mergeReadMessageIds(new Set(['message-1']), ['message-1', 'message-2']),
   new Set(['message-1', 'message-2']),
 );
+
+const platformMessage = { id: 'msg-platform-ebay' };
+const ordinaryMessage = { id: 'message-ordinary' };
+
+assert.deepEqual(
+  getVisibleSystemMessages(
+    [platformMessage, ordinaryMessage],
+    [{ platform: 'eBay', isStale: true }],
+  ),
+  [platformMessage, ordinaryMessage],
+);
+assert.deepEqual(
+  getVisibleSystemMessages(
+    [platformMessage, ordinaryMessage],
+    [{ platform: 'eBay', isStale: false }],
+  ),
+  [ordinaryMessage],
+);
+assert.deepEqual(
+  getNotificationPreview(
+    Array.from({ length: 7 }, (_, index) => ({ id: `message-${index + 1}` })),
+  ).map((message) => message.id),
+  ['message-1', 'message-2', 'message-3', 'message-4', 'message-5'],
+);
+assert.equal(
+  getUnreadMessageCount(
+    [{ id: 'message-1' }, { id: 'message-2' }, { id: 'message-3' }],
+    new Set(['message-2']),
+  ),
+  2,
+);
+assert.equal(formatNotificationBadgeCount(0), '0');
+assert.equal(formatNotificationBadgeCount(7), '7');
+assert.equal(formatNotificationBadgeCount(99), '99');
+assert.equal(formatNotificationBadgeCount(100), '99+');
 
 assert.equal(systemMessages.length, 12);
 assert.equal(systemMessages.every((message) => message.detail && message.category), true);
