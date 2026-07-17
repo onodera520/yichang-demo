@@ -1,3 +1,9 @@
+import {
+  DEMO_NOW,
+  STALE_EBAY_SYNC_AT,
+  buildBusinessDateTime,
+} from './demoTime.js';
+
 const seedOrders = [
   {
     id: 'order-001',
@@ -543,7 +549,7 @@ function enrichInventory(item, index) {
 
 export const inventory = [...seedInventory, ...Array.from({ length: 125 - seedInventory.length }, (_, index) => createInventoryItem(index + seedInventory.length))].map(enrichInventory);
 
-const seedTasks = [
+const seedTaskRows = [
   {
     id: 'task-001',
     title: '切换至 NJ 仓发货',
@@ -581,7 +587,7 @@ const seedTasks = [
     source: 'TTS-US-240613-0316',
     riskLevel: '中',
     owner: '赵宁',
-    status: '待处理',
+    status: '待确认',
     remainingSLA: '00:46:12',
     createdAt: '2026-06-01 09:50',
     description: 'TikTok Shop 订单物流轨迹超过 48 小时未更新。',
@@ -653,7 +659,7 @@ const seedTasks = [
     source: 'AMZ-JP-240612-0095',
     riskLevel: '中',
     owner: '张磊',
-    status: '待处理',
+    status: '待确认',
     remainingSLA: '08:35:11',
     createdAt: '2026-06-01 08:12',
     description: '清关资料缺少品名补充说明，需上传资料避免订单积压。',
@@ -692,15 +698,51 @@ const seedTasks = [
   },
 ];
 
+function isClosedTaskStatus(status) {
+  return status === '已完成' || status === '已驳回';
+}
+
+function taskCreatedAt(status, index) {
+  if (isClosedTaskStatus(status) && index % 4 === 0) {
+    return `2026-06-${pad((index % 18) + 1)} 09:${pad((index * 7) % 60)}:00`;
+  }
+
+  return buildBusinessDateTime({
+    daysAgo: index % 3 === 0 ? 1 : 0,
+    hour: 7 + (index % 9),
+    minute: (index * 6) % 60,
+    second: 0,
+  });
+}
+
+function alignTaskLogTimes(task, createdAt) {
+  if (!createdAt.startsWith('2026-06-')) return task.processLogs;
+  const dateLabel = createdAt.slice(5, 10);
+  return task.processLogs.map((log) => ({
+    ...log,
+    time: `${dateLabel} ${String(log.time).slice(-5)}`,
+  }));
+}
+
+const seedTasks = seedTaskRows.map((task, index) => {
+  const createdAt = taskCreatedAt(task.status, index);
+  return {
+    ...task,
+    createdAt,
+    processLogs: alignTaskLogTimes(task, createdAt),
+  };
+});
+
 const taskStatuses = ['待分派', '已分派', '处理中', '待确认', '已完成', '已超时', '已升级'];
 const taskSources = ['来源订单', '库存风险', '物流异常', '平台同步', '售后异常'];
 const taskTitles = ['切换发货仓库', '补货风险处理', '物流延误跟进', '平台同步修复', '退款复核确认', '清关资料补充', '发票信息重开', '库存数据校准'];
+const assignedTaskOwners = orderOwners.filter((owner) => owner !== '未分派');
 
 function createTask(index) {
   const sourceType = taskSources[index % taskSources.length];
   const riskLevel = index % 6 === 0 ? '高' : index % 3 === 0 ? '中' : '低';
   const status = taskStatuses[index % taskStatuses.length];
-  const owner = orderOwners[index % orderOwners.length];
+  const owner = status === '待分派' ? '未分派' : assignedTaskOwners[index % assignedTaskOwners.length];
   const source = sourceType === '库存风险' ? orderSkuPool[index % orderSkuPool.length] : orders[index % orders.length].orderNo;
   const title = taskTitles[index % taskTitles.length];
   const remainingSLA = status === '已完成' ? '-' : buildSla(index + 4);
@@ -717,12 +759,18 @@ function createTask(index) {
     remainingSLA,
     ...(overdueDuration ? { overdueDuration } : {}),
     deadline: index % 4 === 0 ? '今天 18:00' : index % 4 === 1 ? '今天 14:30' : index % 4 === 2 ? '明天 10:00' : '24小时内',
-    createdAt: index < 16 ? `今天 ${pad(7 + (index % 8), 2)}:${pad((index * 6) % 60, 2)}` : `06-${pad((index % 18) + 1, 2)} ${pad(9 + (index % 8), 2)}:${pad((index * 5) % 60, 2)}`,
+    createdAt: taskCreatedAt(status, index),
     description: `${sourceType}触发 ${title}，需要负责人确认处理路径并回写处理结果。`,
     impact: `预计影响 ${2 + (index % 12)} 个对象，关联金额 ¥${(600 + (index * 281) % 9000).toLocaleString('zh-CN')}`,
     processLogs: [
       { time: '今天 09:00', owner: '系统', action: '创建任务', detail: `${sourceType}规则触发`, tone: 'blue' },
-      { time: '今天 09:12', owner, action: status === '待分派' ? '等待分派' : '接收任务', detail: `负责人 ${owner} 已进入处理队列`, tone: 'green' },
+      {
+        time: '今天 09:12',
+        owner: status === '待分派' ? '系统' : owner,
+        action: status === '待分派' ? '等待分派' : '接收任务',
+        detail: status === '待分派' ? '等待分配具体负责人' : `负责人 ${owner} 已进入处理队列`,
+        tone: status === '待分派' ? 'blue' : 'green',
+      },
       ...(status === '已完成'
         ? [{ time: '今天 10:20', owner, action: '完成任务', detail: '处理结果已同步至异常对象', tone: 'green' }]
         : status === '已升级'
@@ -732,7 +780,13 @@ function createTask(index) {
   };
 }
 
-export const tasks = [...seedTasks, ...Array.from({ length: 89 - seedTasks.length }, (_, index) => createTask(index + seedTasks.length))];
+export const tasks = [
+  ...seedTasks,
+  ...Array.from({ length: 89 - seedTasks.length }, (_, index) => createTask(index + seedTasks.length)),
+].map((task) => ({
+  ...task,
+  processLogs: alignTaskLogTimes(task, task.createdAt),
+}));
 
 export const analytics = {
   overviewMetrics: [
@@ -788,13 +842,13 @@ export const settings = {
     { platform: 'Shopify', status: '待授权', lastSync: '-', description: '未授权' },
   ],
   storeSyncStatus: [
-    { storeName: 'US Store 01', platform: 'Amazon', region: '美国', syncStatus: '成功', lastSyncAt: '2026-06-01 09:32:51' },
-    { storeName: 'EU Store 02', platform: 'Amazon', region: '欧洲', syncStatus: '成功', lastSyncAt: '2026-06-01 09:31:21' },
-    { storeName: 'TikTok Shop-US', platform: 'TikTok Shop', region: '美国', syncStatus: '成功', lastSyncAt: '2026-06-01 09:27:11' },
-    { storeName: 'TikTok Shop-UK', platform: 'TikTok Shop', region: '英国', syncStatus: '成功', lastSyncAt: '2026-06-01 09:18:43' },
-    { storeName: 'eBay-AU', platform: 'eBay', region: '澳大利亚', syncStatus: '延迟', lastSyncAt: '2026-06-01 09:18:41' },
-    { storeName: 'eBay-US', platform: 'eBay', region: '美国', syncStatus: '成功', lastSyncAt: '2026-06-01 09:15:36' },
-    { storeName: 'Shopify-CA', platform: 'Shopify', region: '加拿大', syncStatus: '成功', lastSyncAt: '2026-06-01 09:11:37' },
+    { storeName: 'US Store 01', platform: 'Amazon', region: '美国', syncStatus: '成功', lastSyncAt: buildBusinessDateTime({ hour: 9, minute: 32, second: 51 }) },
+    { storeName: 'EU Store 02', platform: 'Amazon', region: '欧洲', syncStatus: '成功', lastSyncAt: buildBusinessDateTime({ hour: 9, minute: 31, second: 21 }) },
+    { storeName: 'TikTok Shop-US', platform: 'TikTok Shop', region: '美国', syncStatus: '成功', lastSyncAt: buildBusinessDateTime({ hour: 9, minute: 27, second: 11 }) },
+    { storeName: 'TikTok Shop-UK', platform: 'TikTok Shop', region: '英国', syncStatus: '成功', lastSyncAt: buildBusinessDateTime({ hour: 9, minute: 18, second: 43 }) },
+    { storeName: 'eBay-AU', platform: 'eBay', region: '澳大利亚', syncStatus: '延迟', lastSyncAt: STALE_EBAY_SYNC_AT },
+    { storeName: 'eBay-US', platform: 'eBay', region: '美国', syncStatus: '延迟', lastSyncAt: STALE_EBAY_SYNC_AT },
+    { storeName: 'Shopify-CA', platform: 'Shopify', region: '加拿大', syncStatus: '未授权', lastSyncAt: '-' },
   ],
   slaRules: [
     { rule: '缺货导致订单取消', threshold: '>5单/日', severity: '高', responseLimit: '30分钟' },
@@ -997,7 +1051,7 @@ settings.platformConnections.forEach((connection) => {
   if (connection.platform === 'eBay') {
     Object.assign(connection, {
       isStale: true,
-      lastSuccessfulSync: '2026-06-01 09:18:41',
+      lastSuccessfulSync: STALE_EBAY_SYNC_AT,
       dataCompleteness: 48,
       description: '数据已停止同步，仅供参考',
     });
@@ -1009,7 +1063,7 @@ settings.platformConnections.forEach((connection) => {
   }
   Object.assign(connection, {
     isStale: false,
-    lastSuccessfulSync: '2026-06-01 09:40:52',
+    lastSuccessfulSync: DEMO_NOW,
     dataCompleteness: 100,
   });
 });
@@ -1017,7 +1071,7 @@ settings.platformConnections.forEach((connection) => {
 orders.forEach((order, index) => {
   order.riskExplanation = createRiskExplanation(order, index);
   order.aiEvidence = {
-    updatedAt: order.platform === 'eBay' ? '2026-06-01 09:18:41' : '2026-06-01 09:41:52',
+    updatedAt: order.platform === 'eBay' ? STALE_EBAY_SYNC_AT : DEMO_NOW,
     evidence: [
       `${order.abnormalType}规则已命中，关联 ${order.relatedSku || '订单商品'} 数据`,
       `当前影响金额 ¥${Number(order.amount || 0).toLocaleString('zh-CN')}`,
@@ -1054,7 +1108,7 @@ inventory.forEach((item, index) => {
   };
   item.riskExplanation = createRiskExplanation(item, index);
   item.aiEvidence = {
-    updatedAt: item.platform === 'eBay' ? '2026-06-01 09:18:41' : '2026-06-01 09:41:52',
+    updatedAt: item.platform === 'eBay' ? STALE_EBAY_SYNC_AT : DEMO_NOW,
     evidence: [
       `当前库存 ${item.currentStock} 件，有效在途 ${effectiveTransitStock} 件`,
       `安全库存 ${safetyStock} 件，预测日均销量 ${item.dailySales} 件`,
@@ -1084,7 +1138,7 @@ const suggestionEvidence = {
 
 dashboardSuggestions.forEach((suggestion, index) => {
   suggestion.aiEvidence = {
-    updatedAt: '2026-06-01 09:41:52',
+    updatedAt: DEMO_NOW,
     ...suggestionEvidence[suggestion.id],
   };
   suggestion.riskExplanation = createRiskExplanation(suggestion, index);
