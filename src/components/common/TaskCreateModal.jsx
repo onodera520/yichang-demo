@@ -6,14 +6,14 @@ const initialForm = {
   source: '',
   sourceType: '来源订单',
   riskLevel: '中',
-  owner: '未分派',
+  owner: '王敏',
   deadline: '今天 18:00',
   description: '',
 };
 
 const sourceTypes = ['来源订单', '库存风险', '物流异常', '平台同步', '售后异常'];
 const riskLevels = ['高', '中', '低'];
-const owners = ['未分派', '王敏', '赵宁', '陈浩', '刘畅', '周扬', '张磊', '李娜'];
+const owners = ['王敏', '赵宁', '陈浩', '刘畅', '周扬', '张磊', '李娜'];
 const deadlines = ['今天 14:30', '今天 18:00', '明天 10:00', '24小时内'];
 
 export default function TaskCreateModal({ open, onClose, onSubmit }) {

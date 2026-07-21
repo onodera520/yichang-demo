@@ -11,7 +11,7 @@ export function getTaskSlaPresentation(task, nowMs, anchorMs) {
 
   const elapsedSeconds = getElapsedSeconds(nowMs, anchorMs);
 
-  if (task.status === '已超时') {
+  if (task.overdueDuration || task.status === '已超时') {
     const initialOverdueSeconds = parseSlaToSeconds(task.overdueDuration ?? task.remainingSLA) ?? 0;
     const seconds = initialOverdueSeconds + elapsedSeconds;
     return { state: 'overdue', seconds, label: `超时 ${formatSlaSeconds(seconds)}` };

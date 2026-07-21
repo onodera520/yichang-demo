@@ -1,6 +1,10 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Paperclip, X } from 'lucide-react';
-import { applyCompletionTemplate, getCompletionTemplates } from '../../state/completionTemplates.js';
+import {
+  applyCompletionTemplate,
+  getCompletionDialogCopy,
+  getCompletionTemplates,
+} from '../../state/completionTemplates.js';
 import { validateCompletionEvidence } from '../../state/trustLayer.js';
 
 const initialForm = { result: '', description: '', resolvedSource: '', referenceNo: '', quantity: '', cost: '', attachment: null };
@@ -15,6 +19,10 @@ export default function TaskCompletionModal({ open, task, onClose, onSubmit }) {
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
   const completionTemplates = useMemo(() => getCompletionTemplates(task), [task]);
+  const selectedTemplate = completionTemplates.find((item) => item.id === selectedTemplateId);
+  const targetStatus = selectedTemplate?.targetStatus
+    ?? (form.resolvedSource === 'yes' ? '已完成' : '处理中');
+  const dialogCopy = getCompletionDialogCopy(targetStatus);
 
   useEffect(() => {
     if (!open) return;
@@ -52,6 +60,7 @@ export default function TaskCompletionModal({ open, task, onClose, onSubmit }) {
 
   const update = (key, value) => {
     setForm((current) => ({ ...current, [key]: value }));
+    if (key === 'resolvedSource') setSelectedTemplateId(null);
     setErrors((current) => ({ ...current, [key]: undefined }));
   };
 
@@ -70,6 +79,7 @@ export default function TaskCompletionModal({ open, task, onClose, onSubmit }) {
     event.preventDefault();
     const evidence = {
       ...form,
+      targetStatus,
       ...(form.resolvedSource === '' ? {} : { resolvedSource: form.resolvedSource === 'yes' }),
     };
     delete evidence.resolvedSource;
@@ -93,8 +103,8 @@ export default function TaskCompletionModal({ open, task, onClose, onSubmit }) {
         role="dialog"
       >
         <div className="flex items-start justify-between gap-4">
-          <div><h2 id="task-completion-title" className="text-lg font-semibold text-[#111827]">完成任务</h2><p className="mt-1 text-sm text-[#7889A8]">{task?.title}</p></div>
-          <button className="p-1 text-[#8A98B3]" onClick={onClose} type="button" aria-label="关闭完成任务弹窗"><X className="h-4 w-4" /></button>
+          <div><h2 id="task-completion-title" className="text-lg font-semibold text-[#111827]">{dialogCopy.title}</h2><p className="mt-1 text-sm text-[#7889A8]">{task?.title}</p></div>
+          <button className="p-1 text-[#8A98B3]" onClick={onClose} type="button" aria-label={`关闭${dialogCopy.title}弹窗`}><X className="h-4 w-4" /></button>
         </div>
         <section className="mt-4" aria-labelledby="quick-completion-title">
           <div className="mb-2 flex items-center justify-between gap-3">
@@ -153,7 +163,7 @@ export default function TaskCompletionModal({ open, task, onClose, onSubmit }) {
         </div>
         <div className="mt-5 flex justify-end gap-2">
           <button className="h-9 rounded-[7px] border border-[#C9D3E1] px-4 text-sm font-semibold text-[#263246]" onClick={onClose} type="button">取消</button>
-          <button className="h-9 rounded-[7px] bg-[#2F7BFF] px-4 text-sm font-semibold text-white" type="submit">提交完成</button>
+          <button className="h-9 rounded-[7px] bg-[#2F7BFF] px-4 text-sm font-semibold text-white" type="submit">{dialogCopy.submitLabel}</button>
         </div>
       </form>
     </div>

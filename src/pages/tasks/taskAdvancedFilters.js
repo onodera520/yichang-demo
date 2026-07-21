@@ -1,3 +1,4 @@
+import { normalizeBusinessDate } from '../../data/demoTime.js';
 import { getTaskSlaPresentation } from '../../state/taskSla.js';
 
 export const taskAdvancedFilterDefaults = {
@@ -31,7 +32,7 @@ export function matchesTaskAdvancedFilters(
   nowMs = Date.now(),
   anchorMs = nowMs,
 ) {
-  const createdDate = String(task.createdAt ?? '').slice(0, 10);
+  const createdDate = normalizeBusinessDate(task.createdAt);
   const hasCreatedRange = Boolean(filters.createdFrom || filters.createdTo);
   const minHours = optionalNumber(filters.slaMinHours);
   const maxHours = optionalNumber(filters.slaMaxHours);

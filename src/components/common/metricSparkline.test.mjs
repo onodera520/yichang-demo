@@ -16,6 +16,11 @@ assert.match(component, /data-sparkline-endpoint/, 'component should render a me
 assert.match(component, /data-sparkline-active-dot/, 'component should render the nearest hovered data point');
 assert.match(component, /formatValue\(payload\[0\]\.value\)/, 'tooltip should show only the formatted point value');
 assert.match(component, /useId\(\)/, 'gradient ids should be unique per card');
+assert.match(
+  component,
+  /compact \? 'bottom-2\.5 h-5' : 'bottom-4 h-6'/,
+  'compact sparklines should sit lower and reserve enough clearance for their endpoint halo',
+);
 
 assert.match(styles, /\.metric-sparkline-card:hover \.metric-sparkline-line/, 'card hover should enhance the line');
 assert.match(styles, /\.metric-sparkline-card:hover \.metric-sparkline-area/, 'card hover should deepen the area');

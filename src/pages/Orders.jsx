@@ -34,8 +34,10 @@ import { useRefreshTime } from '../hooks/useRefreshTime.js';
 import { useSlaClock } from '../hooks/useSlaClock.js';
 import { useDemoState } from '../state/DemoStateContext.jsx';
 import { useTopbarFilter } from '../state/TopbarFilterContext.jsx';
+import { sortOrdersByPurchaseTimeDesc } from '../utils/orderSorting.js';
 import { getRemainingSlaSeconds } from '../utils/sla.js';
 import { requiresStaleDataConfirmation } from '../state/trustLayer.js';
+import { getSourceTaskBlockReason } from '../state/sourceTaskWorkflow.js';
 import OrderToolbarActions from './orders/OrderToolbarActions.jsx';
 import OrderAdvancedFilterPopover from './orders/OrderAdvancedFilterPopover.jsx';
 import {
@@ -46,10 +48,16 @@ import {
   ORDER_TABLE_SETTINGS_VERSION,
   normalizeOrderTableSettings,
 } from './orders/orderTableSettings.js';
+import { getOrderPageForId } from './orders/orderNavigation.js';
 import { groupSelectedOrders } from './orders/orderSelectionGroups.js';
 import { getCenteredIndicatorOffset } from './orders/tabIndicator.js';
+import {
+  applyOrderDashboardPreset,
+  getOrderDashboardPresetMeta,
+} from './orders/dashboardPreset.js';
 
 const tabs = ['全部', '地址异常', '缺货', '物流延误', '平台同步失败', '支付异常', '退款', '清关异常'];
+const assignees = ['王敏', '赵宁', '陈浩', '刘畅', '周扬', '张磊', '李娜'];
 
 const filterDefaults = {
   platform: '',
@@ -165,7 +173,9 @@ export default function Orders() {
   const location = useLocation();
   const { showToast } = useToast();
   const {
+    adoptOrderSuggestion,
     applyOrderTransaction,
+    assignOrderOwner,
     createOrderTask,
     tasks,
     orders: rows,
@@ -178,8 +188,10 @@ export default function Orders() {
   const slaClock = useSlaClock();
   const [activeTab, setActiveTab] = useState('全部');
   const [filters, setFilters] = useState(filterDefaults);
+  const [dashboardPreset, setDashboardPreset] = useState('');
   const [selectedIds, setSelectedIds] = useState([]);
   const [drawerOrderId, setDrawerOrderId] = useState(null);
+  const [pendingLocateOrderId, setPendingLocateOrderId] = useState(null);
   const [actionOpen, setActionOpen] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [pendingAction, setPendingAction] = useState(null);
@@ -239,11 +251,25 @@ export default function Orders() {
   }, [tableSettings]);
 
   useEffect(() => {
+    const presetKey = location.state?.dashboardPreset;
+    const preset = getOrderDashboardPresetMeta(presetKey);
+    if (preset) {
+      setDashboardPreset(presetKey);
+      setActiveTab(preset.tab);
+      setFilters({ ...filterDefaults, riskLevel: preset.riskLevel });
+      setCurrentPage(1);
+      setDrawerOrderId(null);
+      setPendingLocateOrderId(null);
+      setActionOpen(false);
+    }
     if (location.state?.abnormalType) {
+      setDashboardPreset('');
       setActiveTab(location.state.abnormalType);
     }
     if (location.state?.openOrderId) {
+      setDashboardPreset('');
       setDrawerOrderId(location.state.openOrderId);
+      setPendingLocateOrderId(location.state.openOrderId);
       setActionOpen(false);
     }
   }, [location.state]);
@@ -300,14 +326,51 @@ export default function Orders() {
     });
   }, [activeTab, filters, rows, slaClock.anchorMs, slaClock.nowMs, topbarKeyword, topbarPlatform, topbarStore]);
 
+  const sortedRows = useMemo(() => {
+    if (dashboardPreset) {
+      return applyOrderDashboardPreset(
+        filteredRows,
+        dashboardPreset,
+        slaClock.nowMs,
+        slaClock.anchorMs,
+      );
+    }
+    return sortOrdersByPurchaseTimeDesc(filteredRows);
+  }, [dashboardPreset, filteredRows, slaClock.anchorMs, slaClock.nowMs]);
+
   useEffect(() => {
     setCurrentPage(1);
-  }, [activeTab, filters, topbarKeyword, topbarPlatform, topbarStore]);
+  }, [activeTab, dashboardPreset, filters, topbarKeyword, topbarPlatform, topbarStore]);
 
-  const pageCount = Math.max(1, Math.ceil(filteredRows.length / ORDER_PAGE_SIZE));
+  const pageCount = Math.max(1, Math.ceil(sortedRows.length / ORDER_PAGE_SIZE));
   const safePage = Math.min(currentPage, pageCount);
-  const visibleRows = filteredRows.slice((safePage - 1) * ORDER_PAGE_SIZE, safePage * ORDER_PAGE_SIZE);
+  const visibleRows = sortedRows.slice((safePage - 1) * ORDER_PAGE_SIZE, safePage * ORDER_PAGE_SIZE);
   const visiblePages = getVisiblePages(safePage, pageCount);
+
+  useEffect(() => {
+    if (!pendingLocateOrderId) return undefined;
+
+    const targetPage = getOrderPageForId(sortedRows, pendingLocateOrderId, ORDER_PAGE_SIZE);
+    if (targetPage == null) {
+      setPendingLocateOrderId(null);
+      return undefined;
+    }
+
+    if (safePage !== targetPage) {
+      setCurrentPage(targetPage);
+      return undefined;
+    }
+
+    const frame = window.requestAnimationFrame(() => {
+      const targetRow = tableScrollRef.current?.querySelector(`[data-order-id="${pendingLocateOrderId}"]`);
+      if (!targetRow) return;
+
+      targetRow.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      setPendingLocateOrderId(null);
+    });
+
+    return () => window.cancelAnimationFrame(frame);
+  }, [pendingLocateOrderId, safePage, sortedRows]);
 
   useEffect(() => {
     tableScrollRef.current?.scrollTo({ top: 0 });
@@ -324,6 +387,9 @@ export default function Orders() {
     () => ({ ...tableSettings, labels: orderColumnLabels, defaults: defaultOrderTableSettings }),
     [tableSettings],
   );
+  const drawerTaskBlockReason = drawerOrder
+    ? getSourceTaskBlockReason(drawerOrder, tasks, 'order')
+    : '';
 
   const updateFilter = (key, value) => {
     setFilters((current) => ({ ...current, [key]: value }));
@@ -347,10 +413,20 @@ export default function Orders() {
     const order = rows.find((item) => item.id === orderId);
     if (!order) return;
     requestOrderAction(order, '采纳 AI 建议', () => {
-      updateOrderStatus(orderId, '处理中');
+      adoptOrderSuggestion(orderId);
       setActionOpen(false);
-      showToast({ message: '已采纳建议，订单状态已更新为处理中', type: 'success' });
+      showToast({ message: '已采纳建议，请分派负责人', type: 'success' });
     });
+  };
+
+  const handleAssignOrderOwner = (owner) => {
+    if (!drawerOrder) return;
+    try {
+      assignOrderOwner(drawerOrder.id, owner);
+      showToast({ message: `已分派给${owner}`, type: 'success' });
+    } catch (error) {
+      showToast({ message: error.message, type: 'info' });
+    }
   };
 
   const handleRejectSuggestion = (orderId) => {
@@ -366,10 +442,18 @@ export default function Orders() {
 
   const handleGenerateTask = () => {
     if (!drawerOrder) return;
+    if (drawerTaskBlockReason) {
+      showToast({ message: drawerTaskBlockReason, type: 'info' });
+      return;
+    }
     requestOrderAction(drawerOrder, '生成协同任务', () => {
-      const task = createOrderTask(drawerOrder);
+      const result = createOrderTask(drawerOrder);
+      if (!result.ok) {
+        showToast({ message: result.error, type: 'info' });
+        return;
+      }
       showToast({ message: '已生成任务', type: 'success' });
-      navigate('/tasks', { state: { highlightTaskId: task.id } });
+      navigate('/tasks', { state: { highlightTaskId: result.task.id } });
     });
   };
 
@@ -477,6 +561,21 @@ export default function Orders() {
 
       <section className="orders-table-card">
         <div className="orders-table-shell">
+          {dashboardPreset ? (
+            <div className="mx-3 mt-3 flex h-8 shrink-0 items-center justify-between rounded-[8px] border border-[#CFE0FF] bg-[#F4F8FF] px-3 text-xs text-[#3767A6]">
+              <span>来自异常工作台：{getOrderDashboardPresetMeta(dashboardPreset).label}</span>
+              <button
+                type="button"
+                className="font-medium text-[#2F7BFF]"
+                onClick={() => {
+                  setDashboardPreset('');
+                  setCurrentPage(1);
+                }}
+              >
+                清除
+              </button>
+            </div>
+          ) : null}
           <div ref={tableScrollRef} className="orders-table-scroll">
             <table className="orders-table">
               <colgroup>
@@ -500,6 +599,7 @@ export default function Orders() {
                   return (
                     <tr
                       key={row.id}
+                      data-order-id={row.id}
                       className={`orders-row ${selected ? 'orders-row-selected' : ''} ${active ? 'orders-row-active' : ''}`}
                       onClick={() => openDrawer(row)}
                       aria-current={active ? 'true' : undefined}
@@ -537,7 +637,7 @@ export default function Orders() {
           </div>
 
           <div className="orders-pagination">
-            <span>共 {filteredRows.length} 条</span>
+            <span>共 {sortedRows.length} 条</span>
             <button
               className="p-1 text-[#8A98B3] disabled:cursor-not-allowed disabled:opacity-40"
               disabled={safePage <= 1}
@@ -596,6 +696,7 @@ export default function Orders() {
         actionOpen={actionOpen}
         onActionOpenChange={setActionOpen}
         onAdoptSuggestion={handleAdoptSuggestion}
+        onAssignOwner={handleAssignOrderOwner}
         onClose={() => {
           setDrawerOrderId(null);
           setActionOpen(false);
@@ -604,6 +705,7 @@ export default function Orders() {
         onModifyPurchase={handleModifyPurchase}
         onRejectSuggestion={handleRejectSuggestion}
         order={drawerOrder}
+        taskBlockReason={drawerTaskBlockReason}
         connection={drawerConnection}
         slaClock={slaClock}
       />
@@ -697,11 +799,13 @@ function OrderDetailDrawer({
   actionOpen,
   onActionOpenChange,
   onAdoptSuggestion,
+  onAssignOwner,
   onClose,
   onGenerateTask,
   onModifyPurchase,
   onRejectSuggestion,
   order,
+  taskBlockReason,
   connection,
   slaClock,
 }) {
@@ -740,7 +844,13 @@ function OrderDetailDrawer({
                 <ChevronRight className={`h-4 w-4 transition-transform ${actionOpen ? '-rotate-90' : ''}`} />
               </button>
             </div>
-            <button className="h-10 flex-1 rounded-[8px] bg-[#2F7BFF] text-sm font-semibold text-white" onClick={onGenerateTask} type="button">
+            <button
+              className="h-10 flex-1 rounded-[8px] bg-[#2F7BFF] text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-[#AFCBFF]"
+              disabled={Boolean(taskBlockReason)}
+              onClick={onGenerateTask}
+              title={taskBlockReason}
+              type="button"
+            >
               生成任务
             </button>
           </div>
@@ -783,7 +893,17 @@ function OrderDetailDrawer({
                   <span className="flex h-7 w-7 items-center justify-center rounded-full bg-[#EAF2FF] text-[#2F7BFF]">
                     <UserRound className="h-4 w-4" />
                   </span>
-                  {detail.owner}
+                  {order.status !== '待处理' && !['已完成', '已驳回'].includes(order.status) ? (
+                    <select
+                      aria-label="分派负责人"
+                      className="h-7 rounded-[6px] border border-[#D7DEE9] bg-white px-2 text-sm text-[#1D273B] outline-none focus:border-[#2F7BFF]"
+                      onChange={(event) => onAssignOwner(event.target.value)}
+                      value={order.owner}
+                    >
+                      <option value="未分派">未分派</option>
+                      {assignees.map((owner) => <option key={owner} value={owner}>{owner}</option>)}
+                    </select>
+                  ) : order.owner}
                 </span>
               }
             />
@@ -856,7 +976,7 @@ function getOrderDetail(order) {
     country: detail.country ?? order.country,
     createdAt: detail.createdAt ?? '2026-06-01 09:12:06',
     orderAmount: detail.orderAmount ?? order.amount,
-    owner: detail.owner ?? order.owner,
+    owner: order.owner ?? detail.owner,
     reason: detail.reason ?? order.aiSuggestion,
     receiver: detail.receiver ?? '海外客户',
     store: detail.store ?? order.store,

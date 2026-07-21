@@ -19,4 +19,12 @@ const reset = resetOrderRows([{ id: 'a', detail: { owner: '王敏' } }]);
 assert.deepEqual(reset, [{ id: 'a', detail: { owner: '王敏' } }]);
 assert.notEqual(reset[0], resetOrderRows([{ id: 'a' }])[0]);
 
+const normalized = resetOrderRows([{
+  id: 'unassigned-processing',
+  owner: '未分派',
+  status: '处理中',
+  detail: { owner: '未分派' },
+}]);
+assert.equal(normalized[0].status, '待分派');
+
 console.log('order state transaction tests passed');

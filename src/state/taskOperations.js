@@ -1,4 +1,5 @@
 import { getRemainingSlaSeconds } from '../utils/sla.js';
+import { getTaskTransitionBlockReason, hasAssignedTaskOwner } from './taskAssignment.js';
 
 const batchActions = {
   transfer: {
@@ -11,12 +12,24 @@ const batchActions = {
     tone: 'red',
     detail: () => '已升级主管处理',
   },
-  close: {
-    action: '关闭任务',
-    tone: 'green',
-    detail: () => '任务已批量关闭',
-  },
 };
+
+export function buildTaskReminderPatch(task, supervisor = '张晓') {
+  const waitingForAcceptance = task.status === '已分派';
+  return {
+    ...task,
+    processLogs: [
+      ...(task.processLogs || []),
+      {
+        time: '刚刚',
+        owner: supervisor,
+        action: waitingForAcceptance ? '提醒接单' : '主管催办',
+        detail: waitingForAcceptance ? '已提醒负责人尽快接单' : '已提醒负责人尽快处理',
+        tone: 'orange',
+      },
+    ],
+  };
+}
 
 export function buildBatchTaskPatch(action, payload = {}) {
   const definition = batchActions[action];
@@ -25,6 +38,9 @@ export function buildBatchTaskPatch(action, payload = {}) {
     if (!definition) return task;
 
     const owner = payload.owner ?? task.owner;
+    if (action === 'transfer' && !hasAssignedTaskOwner(owner)) return task;
+    if (getTaskTransitionBlockReason(task, action)) return task;
+
     const patch = {
       processLogs: [
         ...(task.processLogs || []),
@@ -44,11 +60,6 @@ export function buildBatchTaskPatch(action, payload = {}) {
     }
 
     if (action === 'upgrade') patch.status = '已升级';
-
-    if (action === 'close') {
-      patch.status = '已完成';
-      patch.remainingSLA = '-';
-    }
 
     return { ...task, ...patch };
   };
@@ -140,6 +151,45 @@ export function sortTasksByDeadline(tasks, direction = 'asc', nowMs = Date.now()
 
       const difference = left.deadline - right.deadline;
       return difference === 0 ? left.index - right.index : difference * multiplier;
+    })
+    .map(({ task }) => task);
+}
+
+function getTaskCreatedAtTimestamp(task) {
+  const value = String(task?.createdAt ?? '').trim();
+  if (value === '刚刚') return Number.POSITIVE_INFINITY;
+
+  const matched = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?$/.exec(value);
+  if (!matched) return null;
+
+  const [, year, month, day, hour, minute, second = '0'] = matched.map(Number);
+  const timestamp = Date.UTC(year, month - 1, day, hour, minute, second);
+  const normalized = new Date(timestamp);
+  const valid = (
+    normalized.getUTCFullYear() === year
+    && normalized.getUTCMonth() === month - 1
+    && normalized.getUTCDate() === day
+    && normalized.getUTCHours() === hour
+    && normalized.getUTCMinutes() === minute
+    && normalized.getUTCSeconds() === second
+  );
+
+  return valid ? timestamp : null;
+}
+
+export function sortTasksByCreatedAt(tasks) {
+  return tasks
+    .map((task, index) => ({ task, index, timestamp: getTaskCreatedAtTimestamp(task) }))
+    .sort((left, right) => {
+      const leftIsInvalid = left.timestamp == null;
+      const rightIsInvalid = right.timestamp == null;
+      if (leftIsInvalid || rightIsInvalid) {
+        if (leftIsInvalid && rightIsInvalid) return left.index - right.index;
+        return leftIsInvalid ? 1 : -1;
+      }
+
+      if (left.timestamp === right.timestamp) return left.index - right.index;
+      return right.timestamp - left.timestamp;
     })
     .map(({ task }) => task);
 }

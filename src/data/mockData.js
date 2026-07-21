@@ -2,7 +2,11 @@ import {
   DEMO_NOW,
   STALE_EBAY_SYNC_AT,
   buildBusinessDateTime,
+  buildRollingDateLabels,
 } from './demoTime.js';
+import { normalizeOrderAssignmentState } from '../state/orderAssignment.js';
+
+const sevenDayLabels = buildRollingDateLabels(7);
 
 const seedOrders = [
   {
@@ -318,7 +322,13 @@ function enrichOrder(order, index) {
   };
 }
 
-export const orders = [...seedOrders, ...Array.from({ length: 128 - seedOrders.length }, (_, index) => createOrder(index + seedOrders.length))].map(enrichOrder);
+export const orders = [...seedOrders, ...Array.from({ length: 128 - seedOrders.length }, (_, index) => createOrder(index + seedOrders.length))]
+  .map(enrichOrder)
+  .map((order) => normalizeOrderAssignmentState({
+    ...order,
+    owner: '未分派',
+    detail: { ...order.detail, owner: '未分派' },
+  }));
 
 const seedInventory = [
   {
@@ -484,7 +494,7 @@ const inventoryNames = ['头戴式无线降噪耳机Pro', '便携式车载无线
 
 function buildSalesTrend(index, base) {
   return Array.from({ length: 7 }, (_, day) => ({
-    date: `5.${26 + day}`,
+    date: sevenDayLabels[day],
     sales: Math.max(2, base + ((index + day * 3) % 9) - 3),
   }));
 }
@@ -547,7 +557,14 @@ function enrichInventory(item, index) {
   };
 }
 
-export const inventory = [...seedInventory, ...Array.from({ length: 125 - seedInventory.length }, (_, index) => createInventoryItem(index + seedInventory.length))].map(enrichInventory);
+export const inventory = [...seedInventory, ...Array.from({ length: 125 - seedInventory.length }, (_, index) => createInventoryItem(index + seedInventory.length))]
+  .map(enrichInventory)
+  .map((item) => ({
+    ...item,
+    owner: '未分派',
+    status: item.status || '待处理',
+    detail: { ...item.detail, owner: '未分派' },
+  }));
 
 const seedTaskRows = [
   {
@@ -698,25 +715,17 @@ const seedTaskRows = [
   },
 ];
 
-function isClosedTaskStatus(status) {
-  return status === '已完成' || status === '已驳回';
-}
-
-function taskCreatedAt(status, index) {
-  if (isClosedTaskStatus(status) && index % 4 === 0) {
-    return `2026-06-${pad((index % 18) + 1)} 09:${pad((index * 7) % 60)}:00`;
-  }
-
+function taskCreatedAt(index) {
+  const positionInDay = index % 4;
   return buildBusinessDateTime({
-    daysAgo: index % 3 === 0 ? 1 : 0,
-    hour: 7 + (index % 9),
-    minute: (index * 6) % 60,
+    daysAgo: Math.floor(index / 4),
+    hour: 17 - positionInDay * 2,
+    minute: (index * 7) % 60,
     second: 0,
   });
 }
 
 function alignTaskLogTimes(task, createdAt) {
-  if (!createdAt.startsWith('2026-06-')) return task.processLogs;
   const dateLabel = createdAt.slice(5, 10);
   return task.processLogs.map((log) => ({
     ...log,
@@ -725,7 +734,7 @@ function alignTaskLogTimes(task, createdAt) {
 }
 
 const seedTasks = seedTaskRows.map((task, index) => {
-  const createdAt = taskCreatedAt(task.status, index);
+  const createdAt = taskCreatedAt(index);
   return {
     ...task,
     createdAt,
@@ -733,7 +742,7 @@ const seedTasks = seedTaskRows.map((task, index) => {
   };
 });
 
-const taskStatuses = ['待分派', '已分派', '处理中', '待确认', '已完成', '已超时', '已升级'];
+const taskStatuses = ['待分派', '已分派', '处理中', '待确认', '已完成', '已升级'];
 const taskSources = ['来源订单', '库存风险', '物流异常', '平台同步', '售后异常'];
 const taskTitles = ['切换发货仓库', '补货风险处理', '物流延误跟进', '平台同步修复', '退款复核确认', '清关资料补充', '发票信息重开', '库存数据校准'];
 const assignedTaskOwners = orderOwners.filter((owner) => owner !== '未分派');
@@ -741,12 +750,14 @@ const assignedTaskOwners = orderOwners.filter((owner) => owner !== '未分派');
 function createTask(index) {
   const sourceType = taskSources[index % taskSources.length];
   const riskLevel = index % 6 === 0 ? '高' : index % 3 === 0 ? '中' : '低';
-  const status = taskStatuses[index % taskStatuses.length];
+  const createdAt = taskCreatedAt(index);
+  const generatedStatus = taskStatuses[index % taskStatuses.length];
+  const status = createdAt.startsWith('2026-06-') ? '已完成' : generatedStatus;
   const owner = status === '待分派' ? '未分派' : assignedTaskOwners[index % assignedTaskOwners.length];
   const source = sourceType === '库存风险' ? orderSkuPool[index % orderSkuPool.length] : orders[index % orders.length].orderNo;
   const title = taskTitles[index % taskTitles.length];
   const remainingSLA = status === '已完成' ? '-' : buildSla(index + 4);
-  const overdueDuration = status === '已超时' ? remainingSLA : undefined;
+  const overdueDuration = status !== '已完成' && index % 7 === 5 ? remainingSLA : undefined;
 
   return {
     id: `task-${pad(index + 1)}`,
@@ -759,7 +770,7 @@ function createTask(index) {
     remainingSLA,
     ...(overdueDuration ? { overdueDuration } : {}),
     deadline: index % 4 === 0 ? '今天 18:00' : index % 4 === 1 ? '今天 14:30' : index % 4 === 2 ? '明天 10:00' : '24小时内',
-    createdAt: taskCreatedAt(status, index),
+    createdAt,
     description: `${sourceType}触发 ${title}，需要负责人确认处理路径并回写处理结果。`,
     impact: `预计影响 ${2 + (index % 12)} 个对象，关联金额 ¥${(600 + (index * 281) % 9000).toLocaleString('zh-CN')}`,
     processLogs: [
@@ -783,10 +794,34 @@ function createTask(index) {
 export const tasks = [
   ...seedTasks,
   ...Array.from({ length: 89 - seedTasks.length }, (_, index) => createTask(index + seedTasks.length)),
-].map((task) => ({
-  ...task,
-  processLogs: alignTaskLogTimes(task, task.createdAt),
-}));
+].map((task, index) => {
+  const owner = task.owner === '未分派' ? assignedTaskOwners[index % assignedTaskOwners.length] : task.owner;
+  const status = task.status === '待分派' ? '已分派' : task.status;
+  const normalizedTask = {
+    ...task,
+    owner,
+    status,
+    processLogs: (task.processLogs || []).map((log) => (
+      log.action === '等待分派'
+        ? { ...log, owner, action: '接收任务', detail: `负责人 ${owner} 已进入处理队列`, tone: 'green' }
+        : log
+    )),
+  };
+  return {
+    ...normalizedTask,
+    processLogs: alignTaskLogTimes(normalizedTask, normalizedTask.createdAt),
+  };
+});
+
+export const taskTeamMembers = [
+  { name: '王敏', capacity: 10, expertise: ['来源订单', '物流异常'], availability: '可接单' },
+  { name: '赵宁', capacity: 10, expertise: ['库存风险', '物流异常'], availability: '可接单' },
+  { name: '陈浩', capacity: 10, expertise: ['来源订单', '平台同步'], availability: '可接单' },
+  { name: '刘畅', capacity: 8, expertise: ['售后异常', '来源订单'], availability: '忙碌' },
+  { name: '周扬', capacity: 8, expertise: ['库存风险', '清关异常'], availability: '可接单' },
+  { name: '张磊', capacity: 10, expertise: ['平台同步', '物流异常'], availability: '不可用' },
+  { name: '李娜', capacity: 10, expertise: ['售后异常', '库存风险'], availability: '可接单' },
+];
 
 export const analytics = {
   overviewMetrics: [
@@ -798,13 +833,13 @@ export const analytics = {
     { label: '预警准确率', value: '92.4%', currentValue: 92.4, change: '+3.1%', changeValue: 3.1, valueFormat: 'percent-1', trend: [83.4, 84.2, 83.8, 85.1, 86, 85.6, 87.2, 86.8, 87.9, 88.4, 87.7, 88.6, 89.3, 92.4] },
   ],
   exceptionTrend: [
-    { date: '5.26', order: 420, inventory: 360, logistics: 120, afterSale: 550, profit: 480 },
-    { date: '5.27', order: 260, inventory: 240, logistics: 180, afterSale: 490, profit: 560 },
-    { date: '5.28', order: 460, inventory: 420, logistics: 560, afterSale: 680, profit: 590 },
-    { date: '5.29', order: 540, inventory: 690, logistics: 460, afterSale: 750, profit: 460 },
-    { date: '5.30', order: 350, inventory: 750, logistics: 360, afterSale: 610, profit: 620 },
-    { date: '5.31', order: 180, inventory: 560, logistics: 440, afterSale: 330, profit: 560 },
-    { date: '6.01', order: 210, inventory: 640, logistics: 650, afterSale: 350, profit: 700 },
+    { date: sevenDayLabels[0], order: 420, inventory: 360, logistics: 120, afterSale: 550, profit: 480 },
+    { date: sevenDayLabels[1], order: 260, inventory: 240, logistics: 180, afterSale: 490, profit: 560 },
+    { date: sevenDayLabels[2], order: 460, inventory: 420, logistics: 560, afterSale: 680, profit: 590 },
+    { date: sevenDayLabels[3], order: 540, inventory: 690, logistics: 460, afterSale: 750, profit: 460 },
+    { date: sevenDayLabels[4], order: 350, inventory: 750, logistics: 360, afterSale: 610, profit: 620 },
+    { date: sevenDayLabels[5], order: 180, inventory: 560, logistics: 440, afterSale: 330, profit: 560 },
+    { date: sevenDayLabels[6], order: 210, inventory: 640, logistics: 650, afterSale: 350, profit: 700 },
   ],
   aiSuggestionEffect: [
     { abnormalType: '缺货', adopted: 71.3, modified: 23.6, rejected: 5.1 },
@@ -815,13 +850,13 @@ export const analytics = {
     { abnormalType: '平均', adopted: 70.5, modified: 21.1, rejected: 8.4 },
   ],
   efficiencyAnalysis: [
-    { date: '5.26', averageMinutes: 38, processedCount: 2980 },
-    { date: '5.27', averageMinutes: 43, processedCount: 2200 },
-    { date: '5.28', averageMinutes: 34, processedCount: 2400 },
-    { date: '5.29', averageMinutes: 45, processedCount: 4366 },
-    { date: '5.30', averageMinutes: 48, processedCount: 4000 },
-    { date: '5.31', averageMinutes: 34, processedCount: 1900 },
-    { date: '6.01', averageMinutes: 54, processedCount: 2400 },
+    { date: sevenDayLabels[0], averageMinutes: 38, processedCount: 2980 },
+    { date: sevenDayLabels[1], averageMinutes: 43, processedCount: 2200 },
+    { date: sevenDayLabels[2], averageMinutes: 34, processedCount: 2400 },
+    { date: sevenDayLabels[3], averageMinutes: 45, processedCount: 4366 },
+    { date: sevenDayLabels[4], averageMinutes: 48, processedCount: 4000 },
+    { date: sevenDayLabels[5], averageMinutes: 34, processedCount: 1900 },
+    { date: sevenDayLabels[6], averageMinutes: 54, processedCount: 2400 },
   ],
   repeatedIssues: [
     { source: 'AMZ-US-250601-001', platform: 'Amazon', issueType: '缺货', count: 32, amount: 1260, action: '优化补货策略，设置安全预警' },
@@ -872,13 +907,13 @@ export const settings = {
   },
 };
 
-export const dashboardStats = [
-  { label: '高风险订单', value: 23, currentValue: 23, change: '较昨日 +8', changeValue: 8, valueFormat: 'integer', detail: '8 单即将超时', trend: [18, 21, 17, 22, 18, 20, 16, 24, 18, 21, 15, 23], tone: '#FF4D4F' },
-  { label: '即将缺货SKU', value: 37, currentValue: 37, change: '较昨日 +12', changeValue: 12, valueFormat: 'integer', detail: '查看详情', trend: [19, 22, 24, 20, 26, 23, 21, 27, 24, 22, 25, 37], tone: '#FF4D4F' },
-  { label: '物流延误', value: 18, currentValue: 18, change: '较昨日 -5', changeValue: -5, valueFormat: 'integer', detail: '查看详情', trend: [27, 30, 24, 32, 28, 24, 29, 25, 28, 31, 23, 18], tone: '#20C997' },
-  { label: '售后高发', value: 14, currentValue: 14, change: '较昨日 +3', changeValue: 3, valueFormat: 'integer', detail: '查看详情', trend: [12, 14, 10, 16, 13, 11, 15, 12, 14, 18, 11, 14], tone: '#FF1F1F' },
-  { label: '潜在亏损', value: '¥32,560', currentValue: 32560, change: '较昨日 -1,580', changeValue: -1580, valueFormat: 'currency', detail: '查看详情', trend: [33820, 34640, 33210, 34980, 34120, 32950, 34460, 34310, 35620, 34890, 34140, 32560], tone: '#20C997' },
-];
+export const dashboardMetricHistory = {
+  highRiskOrders: [17, 19, 16, 20, 18, 21, 17, 22, 19, 21, 15],
+  stockoutSoon: [28, 30, 31, 29, 33, 31, 30, 34, 32, 31, 25],
+  logisticsDelay: [15, 16, 13, 17, 15, 13, 15, 14, 16, 14, 23],
+  afterSale: [10, 11, 8, 12, 10, 9, 12, 10, 11, 14, 11],
+  potentialLoss: [28400, 29600, 27100, 30900, 28800, 26300, 30100, 29800, 31700, 30500, 34140],
+};
 
 export const inventoryMetricStats = [
   { label: '7天内缺货', value: 128, currentValue: 128, change: '+17', changeValue: 17, valueFormat: 'integer', trend: [96, 101, 108, 99, 113, 106, 102, 115, 109, 103, 110, 122, 114, 107, 116, 120, 111, 128] },
@@ -900,6 +935,7 @@ export const dashboardSuggestions = [
     owner: '王敏',
     remainingSLA: '01:42:31',
     confidence: 0.92,
+    description: 'LA仓库存为0，NJ仓有12件可用库存，不切换可能导致8笔订单超时',
     impact: '影响8笔订单，预计挽回金额 ¥1,260',
     action: '生成任务',
   },
@@ -915,6 +951,7 @@ export const dashboardSuggestions = [
     owner: '赵宁',
     remainingSLA: '04:00:00',
     confidence: 0.88,
+    description: 'LA仓销量连续攀升，现货与在途无法覆盖补货周期',
     impact: '影响4笔订单，预计挽回金额 ¥2,134',
     action: '生成任务',
   },
@@ -930,16 +967,82 @@ export const dashboardSuggestions = [
     owner: '赵宁',
     remainingSLA: '00:46:14',
     confidence: 0.75,
+    description: '尾程轨迹超过48小时未更新，建议调整渠道并同步客服话术',
     impact: '影响6笔订单，减少延误投诉',
     action: '生成任务',
+  },
+  {
+    id: 'suggestion-004',
+    title: '建议修正异常地址并联系买家',
+    source: 'SHP-UK-240613-0061',
+    sourceId: 'order-003',
+    sourceKind: 'order',
+    sourceType: '地址异常',
+    riskLevel: '中',
+    remainingSLA: '03:18:15',
+    confidence: 0.86,
+    description: '收件地址缺少门牌信息，建议核对邮编并联系买家补充',
+    impact: '影响3笔订单，预计挽回金额 ¥1,280',
+  },
+  {
+    id: 'suggestion-005',
+    title: '建议重新同步平台订单',
+    source: 'EBY-DE-240613-0098',
+    sourceId: 'order-004',
+    sourceKind: 'order',
+    sourceType: '平台同步失败',
+    riskLevel: '中',
+    remainingSLA: '05:20:24',
+    confidence: 0.83,
+    description: '平台订单状态与本地数据不一致，建议重新拉取并校验库存扣减',
+    impact: '影响4笔订单，预计挽回金额 ¥930',
+  },
+  {
+    id: 'suggestion-006',
+    title: '建议调拨滞销库存至高销量仓',
+    source: 'HOM-HUM-01',
+    sourceId: 'HOM-HUM-01',
+    sourceKind: 'inventory',
+    sourceType: '库存风险',
+    riskLevel: '滞销',
+    remainingSLA: '24:00:00',
+    confidence: 0.87,
+    description: 'US仓可售天数过高，建议调拨至近期销量增长的目标仓',
+    impact: '预计降低滞销库存120件，释放资金 ¥3,480',
+  },
+  {
+    id: 'suggestion-007',
+    title: '建议重新发起支付并通知买家',
+    source: 'TTS-US-240612-0221',
+    sourceId: 'order-007',
+    sourceKind: 'order',
+    sourceType: '支付异常',
+    riskLevel: '中',
+    remainingSLA: '02:15:51',
+    confidence: 0.81,
+    description: '支付授权未完成，建议重新生成支付链接并同步通知买家',
+    impact: '影响3笔订单，预计挽回金额 ¥780',
+  },
+  {
+    id: 'suggestion-008',
+    title: '建议补充清关资料避免退运',
+    source: 'AMZ-JP-240612-0095',
+    sourceId: 'order-006',
+    sourceKind: 'order',
+    sourceType: '清关异常',
+    riskLevel: '中',
+    remainingSLA: '08:35:53',
+    confidence: 0.79,
+    description: '申报资料缺少商品材质说明，建议补充文件并回传物流商',
+    impact: '影响5笔订单，预计挽回金额 ¥1,150',
   },
 ];
 
 export const systemMessages = [
   {
     id: 'msg-001',
-    content: 'AI生成了6条新的异常建议',
-    detail: 'AI 已完成最新一轮异常扫描，生成 6 条可执行建议，请结合风险等级和置信度进行人工复核。',
+    content: `AI生成了${dashboardSuggestions.length}条新的异常建议`,
+    detail: `AI 已完成最新一轮异常扫描，生成 ${dashboardSuggestions.length} 条可执行建议，请结合风险等级和置信度进行人工复核。`,
     category: 'AI建议',
     time: '5分钟前',
   },
@@ -1137,9 +1240,17 @@ const suggestionEvidence = {
 };
 
 dashboardSuggestions.forEach((suggestion, index) => {
+  const evidence = suggestionEvidence[suggestion.id] ?? {
+    evidence: [
+      suggestion.description,
+      `关联来源 ${suggestion.source}，剩余 SLA ${suggestion.remainingSLA}`,
+      suggestion.impact,
+    ],
+    risks: ['执行前需人工复核来源数据与平台最新状态', '执行后需确认处理结果已成功回写'],
+  };
   suggestion.aiEvidence = {
     updatedAt: DEMO_NOW,
-    ...suggestionEvidence[suggestion.id],
+    ...evidence,
   };
   suggestion.riskExplanation = createRiskExplanation(suggestion, index);
 });

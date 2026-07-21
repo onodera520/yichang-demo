@@ -28,6 +28,7 @@ import PlatformLogo from '../components/common/PlatformLogo.jsx';
 import RiskExplanationPopover from '../components/common/RiskExplanationPopover.jsx';
 import LiveUpdateTime from '../components/LiveUpdateTime.jsx';
 import { useToast } from '../components/common/Toast.jsx';
+import { buildRollingDateLabels } from '../data/demoTime.js';
 import { useRefreshTime } from '../hooks/useRefreshTime.js';
 import { inventoryMetricStats } from '../data/mockData.js';
 import stockout7Icon from '../assets/inventory-icons/stockout-7days.png';
@@ -46,8 +47,13 @@ import productPetFeederImage from '../assets/products/pet-feed-02.png';
 import { useDemoState } from '../state/DemoStateContext.jsx';
 import { useTopbarFilter } from '../state/TopbarFilterContext.jsx';
 import { getReplenishmentQuantity, requiresStaleDataConfirmation } from '../state/trustLayer.js';
+import { getSourceTaskBlockReason } from '../state/sourceTaskWorkflow.js';
 import { formatMetricValue } from '../utils/formatMetricValue.js';
 import { buildInventoryCsv } from './inventory/inventoryExport.js';
+import {
+  applyInventoryDashboardPreset,
+  getInventoryDashboardPresetMeta,
+} from './inventory/dashboardPreset.js';
 
 const metricCardVisuals = [
   {
@@ -84,6 +90,7 @@ const riskStyles = {
   滞销: 'bg-[#F2EAFE] text-[#8B5CF6]',
   调拨: 'bg-[#EAF2FF] text-[#2F7BFF]',
 };
+const assignees = ['王敏', '赵宁', '陈浩', '刘畅', '周扬', '张磊', '李娜'];
 
 const productNameOverrides = {
   'ELE-HEAD-01': '头戴式无线降噪耳机Pro',
@@ -120,15 +127,10 @@ function getSkuProductImage(sku, productName = '') {
   return productHeadphoneImage;
 }
 
-const skuSalesTrend = [
-  { date: '5.26', sales: 14 },
-  { date: '5.27', sales: 16 },
-  { date: '5.28', sales: 15 },
-  { date: '5.29', sales: 18 },
-  { date: '5.30', sales: 20 },
-  { date: '5.31', sales: 17 },
-  { date: '6.01', sales: 22 },
-];
+const skuSalesTrend = buildRollingDateLabels(7).map((date, index) => ({
+  date,
+  sales: [14, 16, 15, 18, 20, 17, 22][index],
+}));
 
 const INVENTORY_PAGE_SIZE = 10;
 
@@ -231,7 +233,14 @@ export default function Inventory() {
   const navigate = useNavigate();
   const location = useLocation();
   const { showToast } = useToast();
-  const { createInventoryTask, inventory, platformConnections } = useDemoState();
+  const {
+    adoptInventorySuggestion,
+    assignInventoryOwner,
+    createInventoryTask,
+    inventory,
+    platformConnections,
+    tasks,
+  } = useDemoState();
   const { keyword: topbarKeyword, platform: topbarPlatform } = useTopbarFilter();
   const { refreshTime, refreshNow } = useRefreshTime();
   const [filters, setFilters] = useState({
@@ -240,6 +249,7 @@ export default function Inventory() {
     riskLevel: '',
     availableDays: '',
   });
+  const [dashboardPreset, setDashboardPreset] = useState('');
   const [selectedSku, setSelectedSku] = useState(null);
   const [adjustedQuantity, setAdjustedQuantity] = useState('300');
   const [adjustReason, setAdjustReason] = useState('覆盖安全库存');
@@ -248,9 +258,26 @@ export default function Inventory() {
   const [pendingAction, setPendingAction] = useState(null);
 
   useEffect(() => {
-    if (!location.state?.openSku) return;
-    const row = inventory.find((item) => item.sku === location.state.openSku);
-    if (row) openSkuDrawer(row);
+    const presetKey = location.state?.dashboardPreset;
+    const preset = getInventoryDashboardPresetMeta(presetKey);
+    if (preset) {
+      setDashboardPreset(presetKey);
+      setFilters({
+        platform: '',
+        warehouse: '',
+        riskLevel: '',
+        availableDays: preset.availableDays,
+      });
+      setCurrentPage(1);
+      setSelectedSku(null);
+      setPendingAction(null);
+    }
+
+    if (location.state?.openSku) {
+      setDashboardPreset('');
+      const row = inventory.find((item) => item.sku === location.state.openSku);
+      if (row) openSkuDrawer(row);
+    }
   }, [location.state, inventory]);
 
   useEffect(() => {
@@ -300,25 +327,32 @@ export default function Inventory() {
     });
   }, [filters, inventory, topbarKeyword, topbarPlatform]);
 
+  const sortedRows = useMemo(
+    () => dashboardPreset
+      ? applyInventoryDashboardPreset(filteredRows, dashboardPreset)
+      : filteredRows,
+    [dashboardPreset, filteredRows],
+  );
+
   useEffect(() => {
     setCurrentPage(1);
   }, [filters, topbarKeyword, topbarPlatform]);
 
-  const pageCount = Math.max(1, Math.ceil(filteredRows.length / INVENTORY_PAGE_SIZE));
+  const pageCount = Math.max(1, Math.ceil(sortedRows.length / INVENTORY_PAGE_SIZE));
   const safePage = Math.min(currentPage, pageCount);
-  const visibleRows = filteredRows.slice((safePage - 1) * INVENTORY_PAGE_SIZE, safePage * INVENTORY_PAGE_SIZE);
+  const visibleRows = sortedRows.slice((safePage - 1) * INVENTORY_PAGE_SIZE, safePage * INVENTORY_PAGE_SIZE);
   const visiblePages = getVisiblePages(safePage, pageCount);
 
   const updateFilter = (key, value) => setFilters((current) => ({ ...current, [key]: value }));
   const resetFilters = () => setFilters({ platform: '', warehouse: '', riskLevel: '', availableDays: '' });
   const applyMetricFilter = (filter) => setFilters((current) => ({ ...current, ...filter }));
   const exportInventory = () => {
-    if (!filteredRows.length) {
+    if (!sortedRows.length) {
       showToast({ message: '当前没有可导出的库存数据', type: 'info' });
       return;
     }
 
-    const blob = new Blob([buildInventoryCsv(filteredRows)], { type: 'text/csv;charset=utf-8' });
+    const blob = new Blob([buildInventoryCsv(sortedRows)], { type: 'text/csv;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
@@ -327,7 +361,7 @@ export default function Inventory() {
     link.click();
     link.remove();
     URL.revokeObjectURL(url);
-    showToast({ message: `已导出 ${filteredRows.length} 条库存风险数据`, type: 'success' });
+    showToast({ message: `已导出 ${sortedRows.length} 条库存风险数据`, type: 'success' });
   };
   const openSkuDrawer = (row) => {
     setSelectedSku(row);
@@ -341,20 +375,49 @@ export default function Inventory() {
     openSkuDrawer(row);
   };
 
-  const handleModifyPurchase = () => showToast({ message: '已保存修改采购数量', type: 'success' });
+  const taskBlockReason = selectedSku
+    ? getSourceTaskBlockReason(selectedSku, tasks, 'inventory')
+    : '';
+
+  const handleModifyPurchase = () => {
+    if (!selectedSku) return;
+    if (Number(adjustedQuantity) <= 0) {
+      showToast({ message: '补货数量必须大于 0', type: 'error' });
+      return;
+    }
+    adoptInventorySuggestion(selectedSku.sku, { adjustedQuantity: Number(adjustedQuantity) });
+    showToast({ message: '已保存修改采购数量，请分派负责人', type: 'success' });
+  };
   const handleRejectSuggestion = () => showToast({ message: '已驳回AI建议', type: 'info' });
+  const handleAssignInventoryOwner = (owner) => {
+    if (!selectedSku) return;
+    try {
+      assignInventoryOwner(selectedSku.sku, owner);
+      showToast({ message: `已分派给${owner}`, type: 'success' });
+    } catch (error) {
+      showToast({ message: error.message, type: 'info' });
+    }
+  };
   const handleCreateTask = () => {
     if (!selectedSku) return;
     if (Number(adjustedQuantity) <= 0) {
       showToast({ message: '补货数量必须大于 0', type: 'error' });
       return;
     }
+    if (taskBlockReason) {
+      showToast({ message: taskBlockReason, type: 'info' });
+      return;
+    }
     const stale = requiresStaleDataConfirmation(selectedSku, platformConnections);
     const highRisk = selectedSku.riskLevel === '高';
     const execute = () => {
-      const task = createInventoryTask(selectedSku, { quantity: adjustedQuantity });
+      const result = createInventoryTask(selectedSku, { quantity: adjustedQuantity });
+      if (!result.ok) {
+        showToast({ message: result.error, type: 'info' });
+        return;
+      }
       showToast({ message: '补货任务已创建', type: 'success' });
-      navigate('/tasks', { state: { detailTaskId: task.id, highlightTaskId: task.id } });
+      navigate('/tasks', { state: { detailTaskId: result.task.id, highlightTaskId: result.task.id } });
     };
     if (!stale && !highRisk) {
       execute();
@@ -436,24 +499,41 @@ export default function Inventory() {
         <section className="min-h-0 flex-1 overflow-hidden rounded-[14px] border border-[#E6EAF2] bg-white shadow-[var(--shadow-card)]">
           <div className="flex h-[62px] items-center px-5">
             <h2 className="text-[20px] font-semibold text-[#111827]">
-              SKU风险列表 <span className="ml-1 text-base font-normal text-[#8A98B3]">（共{filteredRows.length}条）</span>
+              SKU风险列表 <span className="ml-1 text-base font-normal text-[#8A98B3]">（共{sortedRows.length}条）</span>
             </h2>
           </div>
 
-          <div className="h-[calc(100%-122px)] overflow-y-auto overflow-x-hidden px-5 [scrollbar-gutter:stable]">
+          {dashboardPreset ? (
+            <div className="mx-5 mb-2 flex h-8 shrink-0 items-center justify-between rounded-[8px] border border-[#CFE0FF] bg-[#F4F8FF] px-3 text-xs text-[#3767A6]">
+              <span>来自异常工作台：{getInventoryDashboardPresetMeta(dashboardPreset).label}</span>
+              <button
+                type="button"
+                className="font-medium text-[#2F7BFF]"
+                onClick={() => {
+                  setDashboardPreset('');
+                  setCurrentPage(1);
+                }}
+              >
+                清除
+              </button>
+            </div>
+          ) : null}
+
+          <div className={`${dashboardPreset ? 'h-[calc(100%-162px)]' : 'h-[calc(100%-122px)]'} overflow-y-auto overflow-x-hidden px-5 [scrollbar-gutter:stable]`}>
             <table className="w-full table-fixed text-left">
               <colgroup>
-                <col style={{ width: '9%' }} />
-                <col style={{ width: '11%' }} />
-                <col style={{ width: '19%' }} />
-                <col style={{ width: '6%' }} />
-                <col style={{ width: '6%' }} />
-                <col style={{ width: '7%' }} />
-                <col style={{ width: '7%' }} />
-                <col style={{ width: '7%' }} />
-                <col style={{ width: '7%' }} />
-                <col style={{ width: '13%' }} />
                 <col style={{ width: '8%' }} />
+                <col style={{ width: '10%' }} />
+                <col style={{ width: '12%' }} />
+                <col style={{ width: '7%' }} />
+                <col style={{ width: '7%' }} />
+                <col style={{ width: '8%' }} />
+                <col style={{ width: '8%' }} />
+                <col style={{ width: '8%' }} />
+                <col style={{ width: '8%' }} />
+                <col style={{ width: '10%' }} />
+                <col style={{ width: '8%' }} />
+                <col style={{ width: '6%' }} />
               </colgroup>
               <thead className="sticky top-0 z-10 h-[52px] border-b border-[#E3E9F3] bg-white text-sm font-semibold text-[#8A98B3]">
                 <tr>
@@ -467,6 +547,7 @@ export default function Inventory() {
                   <th className="text-center">日均销量</th>
                   <th className="text-center">可售天数</th>
                   <th>AI建议</th>
+                  <th className="text-center">负责人</th>
                   <th className="pr-2 text-right">操作</th>
                 </tr>
               </thead>
@@ -512,6 +593,7 @@ export default function Inventory() {
                     <td className="text-center">{row.dailySales}</td>
                     <td className={`text-center ${redIfLow(row, 'availableDays') ? 'font-medium text-[#FF2D2D]' : ''}`}>{row.availableDays}</td>
                     <td className={`truncate pr-3 ${row.riskLevel === '高' ? 'font-medium text-[#FF2D2D]' : ''}`}>{suggestionSummary(row)}</td>
+                    <td className="text-center">{row.owner}</td>
                     <td className="pr-2 text-right">
                       <button
                         className="font-medium text-[#2F7BFF]"
@@ -529,13 +611,13 @@ export default function Inventory() {
                 })}
               </tbody>
             </table>
-            {filteredRows.length === 0 ? (
+            {sortedRows.length === 0 ? (
               <div className="flex h-[220px] items-center justify-center text-sm text-[#8A98B3]">暂无符合条件的 SKU 风险</div>
             ) : null}
           </div>
 
           <div className="flex h-[60px] items-center justify-end gap-5 border-t border-[#E8EDF5] px-5 text-sm text-[#6B778C]">
-            <span>共 {filteredRows.length} 条</span>
+            <span>共 {sortedRows.length} 条</span>
             <button
               className="text-[#8A98B3] disabled:cursor-not-allowed disabled:opacity-40"
               disabled={safePage <= 1}
@@ -613,8 +695,10 @@ export default function Inventory() {
               驳回建议
             </button>
             <button
-              className="h-10 flex-1 rounded-[8px] bg-[#2F7BFF] px-2 text-sm font-semibold text-white shadow-[0_8px_18px_rgba(47,123,255,0.22)]"
+              className="h-10 flex-1 rounded-[8px] bg-[#2F7BFF] px-2 text-sm font-semibold text-white shadow-[0_8px_18px_rgba(47,123,255,0.22)] disabled:cursor-not-allowed disabled:bg-[#AFCBFF]"
+              disabled={Boolean(taskBlockReason)}
               onClick={handleCreateTask}
+              title={taskBlockReason}
               type="button"
             >
               创建补货任务
@@ -634,6 +718,7 @@ export default function Inventory() {
               setAdjustedQuantity={setAdjustedQuantity}
               setAdjustReason={setAdjustReason}
               setAdjustNote={setAdjustNote}
+              onAssignOwner={handleAssignInventoryOwner}
             />
           </div>
         ) : null}
@@ -663,6 +748,7 @@ function SkuDetailDrawerContent({
   setAdjustedQuantity,
   setAdjustReason,
   setAdjustNote,
+  onAssignOwner,
 }) {
   const detail = selectedSku.detail ?? {};
   const productName = detail.displayName ?? productNameOverrides[selectedSku.sku] ?? selectedSku.productName;
@@ -718,7 +804,7 @@ function SkuDetailDrawerContent({
         </div>
         <div className="mt-2 flex items-center justify-between text-xs">
           <span className="text-[#7889A8]">处理状态</span>
-          <span className="font-semibold text-[#1D273B]">{detail.processStatus ?? selectedSku.status ?? '待处理'}</span>
+          <span className="font-semibold text-[#1D273B]">{selectedSku.status ?? detail.processStatus ?? '待处理'}</span>
         </div>
         <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-[#E6EAF2]">
           <div className="h-full rounded-full bg-[#2F7BFF]" style={{ width: `${confidence}%` }} />
@@ -785,6 +871,19 @@ function SkuDetailDrawerContent({
               <option>预算限制</option>
               <option>供应商交期变化</option>
               <option>人工复核调整</option>
+            </select>
+          </label>
+          <label className="block">
+            <span className="text-xs text-[#7889A8]">负责人</span>
+            <select
+              aria-label="分派库存负责人"
+              className="mt-1 h-9 w-full rounded-[8px] border border-[#D9E1EE] bg-white px-3 text-sm text-[#1D273B] outline-none focus:border-[#2F7BFF] disabled:bg-[#F5F7FB] disabled:text-[#8A98B3]"
+              disabled={selectedSku.status === '待处理'}
+              onChange={(event) => onAssignOwner(event.target.value)}
+              value={selectedSku.owner}
+            >
+              <option value="未分派">未分派</option>
+              {assignees.map((owner) => <option key={owner} value={owner}>{owner}</option>)}
             </select>
           </label>
           <label className="block">

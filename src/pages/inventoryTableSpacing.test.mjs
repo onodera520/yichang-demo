@@ -9,9 +9,14 @@ const widths = [...colgroup.matchAll(/width: '(\d+)%'/g)].map((match) => Number(
 
 assert.deepEqual(
   widths,
-  [9, 11, 19, 6, 6, 7, 7, 7, 7, 13, 8],
-  'inventory columns should reserve space around risk, SKU, product name and AI suggestion',
+  [8, 10, 12, 7, 7, 8, 8, 8, 8, 10, 8, 6],
+  'inventory columns should include owner while preserving the available table width',
 );
 assert.equal(widths.reduce((total, width) => total + width, 0), 100, 'inventory columns should total 100%');
+assert.equal(
+  widths.slice(3, 11).reduce((total, width) => total + width, 0),
+  64,
+  'platform through owner should occupy 64% of the table width',
+);
 
 console.log('inventory table spacing tests passed');

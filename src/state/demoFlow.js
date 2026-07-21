@@ -1,6 +1,17 @@
-import { buildCompletionPatch } from './trustLayer.js';
+import { buildCompletionPatch, getCompletionTargetStatus } from './trustLayer.js';
+import {
+  getTaskInitialStatus,
+  getTaskTransitionBlockReason,
+  hasAssignedTaskOwner,
+  UNASSIGNED_TASK_OWNER,
+} from './taskAssignment.js';
 
 const nowLabel = '刚刚';
+
+function requireAssignedOwner(owner, message = '请先分派负责人') {
+  if (!hasAssignedTaskOwner(owner)) throw new Error(message);
+  return owner;
+}
 
 function getManualTaskRemainingSla(deadline) {
   const normalizedDeadline = String(deadline || '').replace(/\s/g, '');
@@ -11,7 +22,7 @@ function getManualTaskRemainingSla(deadline) {
 }
 
 export function buildManualTask(payload) {
-  const owner = payload.owner || '未分派';
+  const owner = requireAssignedOwner(payload.owner || UNASSIGNED_TASK_OWNER, '请选择负责人');
 
   return {
     id: `task-manual-${Date.now()}`,
@@ -20,7 +31,7 @@ export function buildManualTask(payload) {
     sourceType: payload.sourceType,
     riskLevel: payload.riskLevel,
     owner,
-    status: owner === '未分派' ? '待分派' : '已分派',
+    status: getTaskInitialStatus(owner),
     remainingSLA: getManualTaskRemainingSla(payload.deadline),
     deadline: payload.deadline,
     description: payload.description,
@@ -38,6 +49,8 @@ export function buildManualTask(payload) {
 }
 
 export function buildOrderTask(order) {
+  const owner = requireAssignedOwner(order.owner || UNASSIGNED_TASK_OWNER);
+
   return {
     id: `task-order-${order.id}-${Date.now()}`,
     title: `${order.abnormalType}处理`,
@@ -46,8 +59,8 @@ export function buildOrderTask(order) {
     sourceKind: 'order',
     sourceType: '来源订单',
     riskLevel: order.riskLevel,
-    owner: order.owner || '未分派',
-    status: '待分派',
+    owner,
+    status: getTaskInitialStatus(owner),
     remainingSLA: order.remainingSLA || '04:00:00',
     deadline: '今天 18:00',
     createdAt: nowLabel,
@@ -67,6 +80,7 @@ export function buildOrderTask(order) {
 
 export function buildInventoryTask(sku, options = {}) {
   const quantity = Number(options.quantity ?? sku.suggestedReplenishment ?? 120);
+  const owner = requireAssignedOwner(options.owner || sku.owner || UNASSIGNED_TASK_OWNER);
 
   return {
     id: `task-inventory-${sku.sku}-${Date.now()}`,
@@ -76,8 +90,8 @@ export function buildInventoryTask(sku, options = {}) {
     sourceKind: 'inventory',
     sourceType: '库存风险',
     riskLevel: sku.riskLevel,
-    owner: options.owner || '赵宁',
-    status: '待分派',
+    owner,
+    status: getTaskInitialStatus(owner),
     remainingSLA: '04:00:00',
     deadline: '今天 18:00',
     createdAt: nowLabel,
@@ -101,6 +115,7 @@ export function buildSuggestionTask(suggestion, context = {}) {
   const source = suggestion.source || context.source || sourceId;
   const confidence = suggestion.confidence ?? context.confidence;
   const confidenceText = typeof confidence === 'number' ? `，置信度 ${Math.round(confidence * 100)}%` : '';
+  const owner = requireAssignedOwner(suggestion.owner || context.owner || UNASSIGNED_TASK_OWNER);
 
   return {
     id: `task-suggestion-${suggestion.id || sourceId}-${Date.now()}`,
@@ -110,8 +125,8 @@ export function buildSuggestionTask(suggestion, context = {}) {
     sourceKind,
     sourceType: suggestion.sourceType || context.sourceType || (sourceKind === 'inventory' ? '库存风险' : '来源订单'),
     riskLevel: suggestion.riskLevel || context.riskLevel || '中',
-    owner: suggestion.owner || context.owner || '未分派',
-    status: suggestion.status || '待分派',
+    owner,
+    status: getTaskInitialStatus(owner),
     remainingSLA: suggestion.remainingSLA || context.remainingSLA || '04:00:00',
     deadline: suggestion.deadline || context.deadline || '今天 18:00',
     createdAt: nowLabel,
@@ -132,6 +147,11 @@ export function buildSuggestionTask(suggestion, context = {}) {
 export function completeTaskState(state, taskId, completionEvidence) {
   const targetTask = state.tasks.find((task) => task.id === taskId);
   if (!targetTask) return state;
+  const targetStatus = completionEvidence
+    ? getCompletionTargetStatus(completionEvidence)
+    : '已完成';
+  const transitionAction = targetStatus === '已升级' ? 'upgrade' : 'complete';
+  if (getTaskTransitionBlockReason(targetTask, transitionAction)) return state;
 
   const completedTask = {
     ...targetTask,
@@ -139,6 +159,10 @@ export function completeTaskState(state, taskId, completionEvidence) {
       ? buildCompletionPatch(targetTask, completionEvidence)
       : {
           status: '已完成',
+          previousRemainingSLA:
+            targetTask.remainingSLA && targetTask.remainingSLA !== '-'
+              ? targetTask.remainingSLA
+              : targetTask.previousRemainingSLA || '04:00:00',
           remainingSLA: '-',
           processLogs: [
             ...(targetTask.processLogs || []),
@@ -152,7 +176,8 @@ export function completeTaskState(state, taskId, completionEvidence) {
           ],
         }),
   };
-  const shouldSyncSource = completionEvidence?.resolvedSource !== false;
+  const shouldSyncSource = completedTask.status === '已完成'
+    && completionEvidence?.resolvedSource !== false;
 
   return {
     ...state,

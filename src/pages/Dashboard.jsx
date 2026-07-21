@@ -23,7 +23,6 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
-import AiEvidencePanel from '../components/common/AiEvidencePanel.jsx';
 import DetailDrawer from '../components/common/DetailDrawer.jsx';
 import FilterSelect from '../components/common/FilterSelect.jsx';
 import MetricSparkline from '../components/common/MetricSparkline.jsx';
@@ -32,10 +31,9 @@ import PlatformLogo from '../components/common/PlatformLogo.jsx';
 import RiskExplanationPopover from '../components/common/RiskExplanationPopover.jsx';
 import SlaCountdown from '../components/common/SlaCountdown.jsx';
 import LiveUpdateTime from '../components/LiveUpdateTime.jsx';
-import { useToast } from '../components/common/Toast.jsx';
 import {
   analytics,
-  dashboardStats,
+  dashboardMetricHistory,
   dashboardSuggestions,
   systemMessages,
 } from '../data/mockData.js';
@@ -51,19 +49,21 @@ import {
 import { getTaskSlaPresentation } from '../state/taskSla.js';
 import { useTopbarFilter } from '../state/TopbarFilterContext.jsx';
 import { formatMetricValue } from '../utils/formatMetricValue.js';
+import { getOperationalPriorityRows } from '../utils/orderSorting.js';
 import {
-  filterAndSortPriorityRows,
   getNextPrioritySort,
   getPriorityAbnormalTypes,
 } from './dashboardPriorityControls.js';
+import { buildDashboardMetrics } from './dashboardMetrics.js';
+import SuggestionDrawerContent from './dashboard/SuggestionDrawerContent.jsx';
 import afterSaleIcon from '../assets/dashboard-icons/after-sale.png';
 import highRiskOrderIcon from '../assets/dashboard-icons/high-risk-order.png';
 import logisticsDelayIcon from '../assets/dashboard-icons/logistics-delay.png';
 import lossRiskIcon from '../assets/dashboard-icons/loss-risk.png';
 import stockRiskIcon from '../assets/dashboard-icons/stock-risk.png';
+import noUnreadMessagesImage from '../assets/empty-states/no-unread-messages.png';
 
 const metricIcons = [highRiskOrderIcon, stockRiskIcon, logisticsDelayIcon, afterSaleIcon, lossRiskIcon];
-const metricMarkerTones = ['#FF4D4F', '#FF8A00', '#20C997', '#FF1F1F', '#20C997'];
 const suggestionIcons = [highRiskOrderIcon, stockRiskIcon, logisticsDelayIcon];
 
 const trendTabs = ['全部', '订单异常', '库存异常', '物流异常', '售后异常', '利润风险'];
@@ -89,6 +89,24 @@ const todoTabs = [
   { key: 'dueToday', label: '今日到期' },
 ];
 
+const prioritySortModes = {
+  urgent: {
+    label: '紧急优先',
+    title: '当前：已超时和即将超时优先',
+    icon: ArrowDownUp,
+  },
+  'risk-desc': {
+    label: '风险高到低',
+    title: '当前：风险从高到低',
+    icon: ArrowDown,
+  },
+  'risk-asc': {
+    label: '风险低到高',
+    title: '当前：风险从低到高',
+    icon: ArrowUp,
+  },
+};
+
 function formatCurrency(value) {
   return `¥${Number(value).toLocaleString('zh-CN')}`;
 }
@@ -105,13 +123,17 @@ function matchesKeyword(fields, keyword) {
 
 function MetricCard({ item, index, onDetail }) {
   const icon = metricIcons[index] ?? highRiskOrderIcon;
-  const markerColor = metricMarkerTones[index] ?? item.tone;
   const positive = String(item.change).includes('+');
   const negative = String(item.change).includes('-');
   const changeColor = positive ? 'text-[#FF1F1F]' : negative ? 'text-[#16C7A1]' : 'text-[#8A98B3]';
 
   return (
-    <article className="metric-sparkline-card relative h-[160px] overflow-hidden rounded-[14px] border border-[#E8ECF3] bg-white px-6 py-4 shadow-[0_8px_24px_rgba(28,39,71,0.06)]">
+    <button
+      type="button"
+      className="metric-sparkline-card relative flex h-[160px] w-full cursor-pointer flex-col items-stretch justify-start overflow-hidden rounded-[14px] border border-[#E8ECF3] bg-white px-6 py-4 text-left shadow-[0_8px_24px_rgba(28,39,71,0.06)] transition hover:border-[#C9D9F8] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2F7BFF]/35"
+      onClick={onDetail}
+      aria-label={`查看${item.label}`}
+    >
       <div className="relative z-10">
         <div className="flex items-center gap-3">
           <div className="flex h-10 w-10 shrink-0 items-center justify-center">
@@ -120,44 +142,46 @@ function MetricCard({ item, index, onDetail }) {
           <div className="min-w-0 truncate text-[17px] font-medium leading-6 text-[#111827]">{item.label}</div>
         </div>
         <div className="mt-0.5 whitespace-nowrap text-[30px] font-semibold leading-none tracking-tight text-black">{item.value}</div>
-        <div className="mt-2 flex items-center justify-between text-[13px] leading-5">
-          <div className="flex items-center gap-2">
+        <div className="mt-2 flex items-center justify-between whitespace-nowrap text-[13px] leading-5">
+          <div className="flex items-center gap-1.5 whitespace-nowrap">
             <span className="text-[#5F6B7A]">较昨日</span>
             <span className={changeColor}>
               {item.change.replace('较昨日', '')}
               {positive ? ' ↑' : negative ? ' ↓' : ''}
             </span>
           </div>
-          <button
-            className="shrink-0 font-medium text-[#2F7BFF]"
-            onClick={onDetail}
-            type="button"
-          >
-            查看详情
-          </button>
+          <span className="shrink-0 font-medium text-[#2F7BFF]">查看详情</span>
         </div>
       </div>
       <MetricSparkline
         animationDelay={index * 50}
         color={item.tone}
+        compact
         formatValue={(value) => formatMetricValue(value, item.valueFormat)}
         label={item.label}
-        markerColor={markerColor}
+        markerColor={item.tone}
         points={item.trend}
       />
-    </article>
+    </button>
   );
 }
 
 function PriorityTable({ rows, onDetail, slaClock }) {
   const [selectedType, setSelectedType] = React.useState('全部异常');
-  const [sortDirection, setSortDirection] = React.useState('default');
+  const [sortMode, setSortMode] = React.useState('urgent');
   const abnormalTypes = React.useMemo(() => getPriorityAbnormalTypes(rows), [rows]);
   const renderedRows = React.useMemo(
-    () => filterAndSortPriorityRows(rows, selectedType, sortDirection),
-    [rows, selectedType, sortDirection],
+    () => getOperationalPriorityRows(rows, {
+      abnormalType: selectedType,
+      sortMode,
+      nowMs: slaClock.nowMs,
+      anchorMs: slaClock.anchorMs,
+      limit: 10,
+    }),
+    [rows, selectedType, slaClock.anchorMs, slaClock.nowMs, sortMode],
   );
-  const SortIcon = sortDirection === 'desc' ? ArrowDown : sortDirection === 'asc' ? ArrowUp : ArrowDownUp;
+  const sortMeta = prioritySortModes[sortMode];
+  const SortIcon = sortMeta.icon;
 
   React.useEffect(() => {
     if (selectedType !== '全部异常' && !abnormalTypes.includes(selectedType)) {
@@ -179,24 +203,24 @@ function PriorityTable({ rows, onDetail, slaClock }) {
             onChange={setSelectedType}
             ariaLabel="异常类型"
             align="right"
-            controlClassName="w-[96px]"
-            triggerClassName="h-8 w-[96px] rounded-[8px] px-3 text-xs"
+            controlClassName="w-[112px]"
+            triggerClassName="h-8 w-[112px] rounded-[8px] px-3 text-xs"
             menuClassName="w-36"
             optionClassName="px-3 py-2 text-xs"
           />
           <button
             type="button"
             className={`flex h-8 min-w-[116px] shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-[8px] border px-3 text-xs transition ${
-              sortDirection === 'default'
+              sortMode === 'urgent'
                 ? 'border-[#D7DEE9] text-[#344767]'
                 : 'border-[#9CC0FF] bg-[#F2F7FF] text-[#2F7BFF]'
             }`}
-            aria-pressed={sortDirection !== 'default'}
-            data-sort-direction={sortDirection}
-            title={sortDirection === 'desc' ? '当前：风险从高到低' : sortDirection === 'asc' ? '当前：风险从低到高' : '当前：默认顺序'}
-            onClick={() => setSortDirection((current) => getNextPrioritySort(current))}
+            aria-pressed={sortMode !== 'urgent'}
+            data-sort-mode={sortMode}
+            title={sortMeta.title}
+            onClick={() => setSortMode((current) => getNextPrioritySort(current))}
           >
-            <span className="whitespace-nowrap">按风险排序</span>
+            <span className="whitespace-nowrap">{sortMeta.label}</span>
             <SortIcon className="h-3.5 w-3.5 shrink-0" />
           </button>
         </div>
@@ -242,7 +266,7 @@ function PriorityTable({ rows, onDetail, slaClock }) {
                 </td>
                 <td className="whitespace-nowrap py-2.5">{formatCurrency(row.amount)}</td>
                 <td className="whitespace-nowrap py-2.5 font-medium">
-                  <SlaCountdown value={row.remainingSLA} {...slaClock} />
+                  <SlaCountdown value={row.remainingSLA} {...slaClock} overdueLabelOnly />
                 </td>
                 <td className="whitespace-nowrap py-2.5">{row.owner}</td>
                 <td className="whitespace-nowrap py-2.5">{row.status}</td>
@@ -270,7 +294,7 @@ function formatSuggestionImpact(value) {
   };
 }
 
-function SuggestionPanel({ suggestions, onGenerate, onDetail, onViewAll }) {
+function SuggestionPanel({ suggestions, onDetail, onViewAll }) {
   return (
     <section className="flex min-h-0 flex-col overflow-hidden rounded-[14px] border border-[#E6EAF2] bg-white px-4 py-3 shadow-[var(--shadow-card)]">
       <div className="mb-2 flex shrink-0 items-center justify-between gap-4">
@@ -280,7 +304,7 @@ function SuggestionPanel({ suggestions, onGenerate, onDetail, onViewAll }) {
           <span className="truncate text-xs text-[#8A98B3]">建议仅供人工判断，高风险操作不会自动执行</span>
         </div>
         <button className="flex shrink-0 items-center gap-0.5 text-xs text-[#2F7BFF]" onClick={onViewAll} type="button">
-          <span>查看全部(6)</span>
+          <span>查看全部({suggestions.length})</span>
           <ChevronRight className="h-4 w-4" aria-hidden="true" />
         </button>
       </div>
@@ -303,18 +327,15 @@ function SuggestionPanel({ suggestions, onGenerate, onDetail, onViewAll }) {
                 <div className="mt-1 text-right text-[13px] font-semibold text-[#1D273B]">置信度 {Math.round(item.confidence * 100)}%</div>
               </div>
             </div>
-            <div className="mt-2.5 overflow-hidden whitespace-nowrap text-[13px] leading-5 text-[#111827]">{suggestionDescription(index)}</div>
+            <div className="mt-2.5 overflow-hidden whitespace-nowrap text-[13px] leading-5 text-[#111827]">{item.description}</div>
             <div className="mt-auto flex min-w-0 items-center justify-between gap-3">
               <div className="flex min-w-0 items-center gap-1 whitespace-nowrap text-[13px] text-[#111827]">
                 <span>{impact.summary}</span>
                 {impact.amount ? <span className="font-semibold text-[#FF1F1F]">¥{impact.amount}</span> : null}
               </div>
-              <div className="flex shrink-0 gap-2">
+              <div className="flex shrink-0">
                 <button className="h-7 rounded-[7px] border border-[#626873] px-2.5 text-xs text-[#344767]" onClick={() => onDetail(item)} type="button">
                   查看详情
-                </button>
-                <button className="h-7 rounded-[7px] bg-[#2F7BFF] px-3 text-xs font-medium text-white" onClick={() => onGenerate(item, index)} type="button">
-                  生成任务
                 </button>
               </div>
             </div>
@@ -324,12 +345,6 @@ function SuggestionPanel({ suggestions, onGenerate, onDetail, onViewAll }) {
       </div>
     </section>
   );
-}
-
-function suggestionDescription(index) {
-  if (index === 0) return 'LA仓库存为0，NJ仓有12件可用库存，不切换可能导致8笔订单超时';
-  if (index === 1) return 'LA仓销量连续攀升，现货与在途无法覆盖补货周期';
-  return '尾程轨迹超过48小时未更新，建议调整渠道并同步客服话术';
 }
 
 function TrendPanel() {
@@ -514,8 +529,8 @@ function MessageDrawerContent({
   const unreadCount = filterDashboardMessages(messages, readMessageIds, 'unread').length;
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between gap-3">
+    <div className="flex h-full min-h-0 flex-col gap-4">
+      <div className="flex shrink-0 items-center justify-between gap-3">
         <div className="flex gap-2">
           {[
             { key: 'all', label: `全部 (${messages.length})` },
@@ -543,7 +558,7 @@ function MessageDrawerContent({
           全部已读
         </button>
       </div>
-      <div className="space-y-2.5">
+      <div className={`${visibleMessages.length === 0 ? 'flex items-center justify-center' : 'space-y-2.5 overflow-y-auto pr-1'} min-h-0 flex-1`}>
         {visibleMessages.map((message) => {
           const unread = !readMessageIds.has(message.id);
           const expanded = expandedMessageId === message.id;
@@ -562,7 +577,12 @@ function MessageDrawerContent({
                 <div className="min-w-0 flex-1">
                   <div className="flex items-start justify-between gap-3">
                     <span className="text-sm font-medium leading-5 text-[#1D273B]">{message.content}</span>
-                    {message.target ? <ChevronRight className="mt-0.5 h-4 w-4 shrink-0 text-[#9AA7BC]" /> : null}
+                    {message.target ? (
+                      <span className="mt-0.5 inline-flex shrink-0 items-center gap-1 text-xs font-medium text-[#2F7BFF]">
+                        去处理
+                        <ChevronRight className="h-3.5 w-3.5" />
+                      </span>
+                    ) : null}
                   </div>
                   <div className="mt-1 flex items-center gap-2 text-xs text-[#8A98B3]">
                     <span>{message.category}</span>
@@ -576,7 +596,14 @@ function MessageDrawerContent({
           );
         })}
         {visibleMessages.length === 0 ? (
-          <div className="rounded-[10px] border border-dashed border-[#DCE3EE] py-12 text-center text-sm text-[#8A98B3]">暂无未读消息</div>
+          <div className="flex h-full w-full flex-col items-center justify-center rounded-[10px] border border-dashed border-[#DCE3EE] text-center">
+            <img
+              alt="暂无未读消息"
+              className="h-28 w-28 object-contain"
+              src={noUnreadMessagesImage}
+            />
+            <span className="mt-2 text-sm text-[#8A98B3]">暂无未读消息</span>
+          </div>
         ) : null}
       </div>
     </div>
@@ -586,9 +613,8 @@ function MessageDrawerContent({
 export default function Dashboard() {
   const location = useLocation();
   const navigate = useNavigate();
-  const { showToast } = useToast();
   const {
-    createSuggestionTask,
+    inventory,
     markAllMessagesRead,
     markMessageRead,
     orders,
@@ -596,10 +622,14 @@ export default function Dashboard() {
     readMessageIds,
     tasks,
   } = useDemoState();
-  const { keyword: topbarKeyword, platform: topbarPlatform, store: topbarStore } = useTopbarFilter();
+  const {
+    keyword: topbarKeyword,
+    platform: topbarPlatform,
+    setKeyword: setTopbarKeyword,
+    store: topbarStore,
+  } = useTopbarFilter();
   const slaClock = useSlaClock();
   const { refreshTime, refreshNow } = useRefreshTime();
-  const [selectedSuggestion, setSelectedSuggestion] = React.useState(null);
   const [utilityDrawer, setUtilityDrawer] = React.useState(null);
   const [todoFilter, setTodoFilter] = React.useState('all');
   const [messageFilter, setMessageFilter] = React.useState('all');
@@ -608,7 +638,6 @@ export default function Dashboard() {
   React.useEffect(() => {
     if (location.state?.openUtility !== 'messages') return;
 
-    setSelectedSuggestion(null);
     setMessageFilter('all');
     setExpandedMessageId(null);
     setUtilityDrawer('messages');
@@ -633,6 +662,16 @@ export default function Dashboard() {
     () => getDashboardTodoGroups(tasks, slaClock.nowMs, slaClock.anchorMs),
     [slaClock.anchorMs, slaClock.nowMs, tasks],
   );
+  const dashboardMetrics = React.useMemo(
+    () => buildDashboardMetrics({
+      orders,
+      inventory,
+      history: dashboardMetricHistory,
+      platform: topbarPlatform,
+      store: topbarStore,
+    }),
+    [inventory, orders, topbarPlatform, topbarStore],
+  );
   const priorityRows = React.useMemo(
     () =>
       orders
@@ -655,8 +694,7 @@ export default function Dashboard() {
               ],
               topbarKeyword,
             ),
-        )
-        .slice(0, 10),
+        ),
     [orders, topbarKeyword, topbarPlatform, topbarStore],
   );
 
@@ -668,40 +706,28 @@ export default function Dashboard() {
     navigate('/orders', { state: { openOrderId: target.id } });
   };
 
-  const handleMetricDetail = (index) => {
-    if (index === 0) {
-      const order = orders.find((item) => item.riskLevel === '高') ?? orders[0];
-      navigate('/orders', { state: { openOrderId: order?.id } });
-      return;
-    }
-
-    if (index === 1) {
-      navigate('/inventory', { state: { openSku: 'ELE-HEAD-01' } });
-      return;
-    }
-
-    if (index === 2) {
-      navigate('/orders', { state: { abnormalType: '物流延误' } });
-      return;
-    }
-
-    navigate('/orders');
+  const handleMetricDetail = (item) => {
+    setTopbarKeyword('');
+    navigate(item.route, {
+      state: { dashboardPreset: item.dashboardPreset },
+    });
   };
 
-  const generateTask = (suggestion) => {
-    const task = createSuggestionTask(suggestion);
-    showToast({ message: '已生成任务', type: 'success' });
-    navigate('/tasks', { state: { highlightTaskId: task.id } });
+  const openSuggestionSource = (suggestion) => {
+    setUtilityDrawer(null);
+    if (suggestion.sourceKind === 'inventory') {
+      navigate('/inventory', { state: { openSku: suggestion.sourceId } });
+      return;
+    }
+    navigate('/orders', { state: { openOrderId: suggestion.sourceId } });
   };
 
   const openTodoDrawer = (filter = 'all') => {
-    setSelectedSuggestion(null);
     setTodoFilter(filter);
     setUtilityDrawer('todo');
   };
 
   const openMessageDrawer = () => {
-    setSelectedSuggestion(null);
     setMessageFilter('all');
     setUtilityDrawer('messages');
   };
@@ -731,8 +757,8 @@ export default function Dashboard() {
       </div>
 
       <div className="grid shrink-0 grid-cols-5 gap-3">
-        {dashboardStats.map((item, index) => (
-          <MetricCard key={item.label} item={item} index={index} onDetail={() => handleMetricDetail(index)} />
+        {dashboardMetrics.map((item, index) => (
+          <MetricCard key={item.key} item={item} index={index} onDetail={() => handleMetricDetail(item)} />
         ))}
       </div>
 
@@ -744,12 +770,8 @@ export default function Dashboard() {
         <div className="grid min-h-0 grid-rows-[390px_1fr] gap-3">
           <SuggestionPanel
             suggestions={dashboardSuggestions}
-            onGenerate={generateTask}
-            onDetail={(suggestion) => {
-              setUtilityDrawer(null);
-              setSelectedSuggestion(suggestion);
-            }}
-            onViewAll={() => navigate('/tasks')}
+            onDetail={openSuggestionSource}
+            onViewAll={() => setUtilityDrawer('suggestions')}
           />
           <div className="grid grid-cols-[0.9fr_1.1fr] gap-3">
             <TodoPanel groups={todoGroups} onEnter={() => navigate('/tasks')} onOpen={openTodoDrawer} />
@@ -759,28 +781,17 @@ export default function Dashboard() {
       </div>
     </div>
     <DetailDrawer
-      open={Boolean(selectedSuggestion)}
-      title={selectedSuggestion?.title || '建议详情'}
-      titleExtra={selectedSuggestion ? <RiskExplanationPopover level={selectedSuggestion.riskLevel} explanation={selectedSuggestion.riskExplanation} /> : null}
-      onClose={() => setSelectedSuggestion(null)}
-      width={420}
+      open={utilityDrawer === 'suggestions'}
+      title={`全部建议（${dashboardSuggestions.length}）`}
+      onClose={() => setUtilityDrawer(null)}
+      width={460}
       topOffset={64}
       bodyClassName="bg-[#F5F7FB]"
     >
-      {selectedSuggestion ? (
-        <div className="space-y-3">
-          <section className="rounded-[10px] border border-[#E3E9F3] bg-white p-4">
-            <div className="text-xs text-[#8A98B3]">建议结论</div>
-            <div className="mt-1 text-base font-semibold text-[#1D273B]">{selectedSuggestion.title}</div>
-            <div className="mt-3 text-sm leading-6 text-[#5F6B7A]">{selectedSuggestion.impact}</div>
-            <div className="mt-2 text-sm text-[#344767]">置信度 {Math.round(selectedSuggestion.confidence * 100)}%</div>
-          </section>
-          <AiEvidencePanel evidence={selectedSuggestion.aiEvidence} />
-          <button className="h-10 w-full rounded-[8px] bg-[#2F7BFF] text-sm font-semibold text-white" onClick={() => generateTask(selectedSuggestion)} type="button">
-            生成任务
-          </button>
-        </div>
-      ) : null}
+      <SuggestionDrawerContent
+        suggestions={dashboardSuggestions}
+        onSuggestionClick={openSuggestionSource}
+      />
     </DetailDrawer>
     <DetailDrawer
       open={utilityDrawer === 'todo'}

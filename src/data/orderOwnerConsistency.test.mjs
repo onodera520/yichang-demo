@@ -20,3 +20,13 @@ assert.deepEqual(
   [],
   'order details should keep the same unassigned owner state as the table',
 );
+
+const unassignedWithWrongStatus = orders
+  .filter((order) => order.owner === '未分派' && order.status !== '待分派')
+  .map((order) => ({ orderNo: order.orderNo, status: order.status }));
+
+assert.deepEqual(
+  unassignedWithWrongStatus,
+  [],
+  'unassigned orders must always stay in the waiting-for-assignment status',
+);

@@ -43,6 +43,35 @@ test('includes both creation date boundaries', () => {
   }, 0, 0), false);
 });
 
+test('normalizes compact and relative mock creation dates', () => {
+  assert.equal(matchesTaskAdvancedFilters({
+    ...task,
+    createdAt: '今天 07:40',
+  }, {
+    ...taskAdvancedFilterDefaults,
+    createdFrom: '2026-07-17',
+    createdTo: '2026-07-17',
+  }, 0, 0), true);
+
+  assert.equal(matchesTaskAdvancedFilters({
+    ...task,
+    createdAt: '06-08 12:35',
+  }, {
+    ...taskAdvancedFilterDefaults,
+    createdFrom: '2026-06-08',
+    createdTo: '2026-06-08',
+  }, 0, 0), true);
+
+  assert.equal(matchesTaskAdvancedFilters({
+    ...task,
+    createdAt: '昨天 12:35',
+  }, {
+    ...taskAdvancedFilterDefaults,
+    createdFrom: '2026-07-16',
+    createdTo: '2026-07-16',
+  }, 0, 0), true);
+});
+
 test('uses live remaining SLA hours and excludes overdue or completed tasks', () => {
   assert.equal(matchesTaskAdvancedFilters(task, {
     ...taskAdvancedFilterDefaults,

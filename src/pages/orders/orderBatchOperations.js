@@ -1,4 +1,5 @@
 const terminalStatuses = new Set(['已完成', '已驳回']);
+const unassignedOwner = '未分派';
 
 const actionLabels = {
   assign: '批量分派',
@@ -26,6 +27,10 @@ function blockedReason(action, order, context) {
   if (terminalStatuses.has(order.status)) return `订单状态为${order.status}，不可执行该操作`;
   const connection = getConnection(order, context.connections || []);
   if (connection && connection.status !== '已连接') return `${order.platform} 平台连接异常，数据不可用`;
+  if (action === 'createTask' || action === 'customerService') {
+    if (order.status === '待处理') return '请先采纳 AI 建议';
+    if (!order.owner || order.owner === unassignedOwner) return '请先分派负责人';
+  }
   if ((action === 'customerService' || action === 'createTask') && duplicateTaskFor(action, order, context.tasks || [])) {
     return action === 'customerService' ? '已存在进行中的客服协同单，不可重复转交' : '已存在进行中的关联任务，不可重复生成';
   }
@@ -58,7 +63,7 @@ function requireFields(action, form) {
   const required = {
     assign: [['owner', '负责人'], ['reason', '分派原因']],
     customerService: [['queue', '客服队列'], ['reason', '转交原因'], ['priority', '优先级']],
-    createTask: [['owner', '负责人'], ['deadline', '截止时间'], ['description', '任务说明']],
+    createTask: [['deadline', '截止时间'], ['description', '任务说明']],
     reject: [['reason', '驳回原因']],
   }[action] || [];
   const missing = required.find(([key]) => !String(form[key] || '').trim());
@@ -75,8 +80,8 @@ function makeTask(action, order, form, now, index) {
     sourceKind: 'order',
     sourceType: isService ? '客服协同' : '来源订单',
     riskLevel: order.riskLevel,
-    owner: isService ? form.queue : form.owner,
-    status: isService ? '待分派' : '已分派',
+    owner: order.owner,
+    status: '已分派',
     remainingSLA: order.remainingSLA || '04:00:00',
     deadline: isService ? '今天 18:00' : form.deadline,
     createdAt: '刚刚',
@@ -95,8 +100,8 @@ function makeTask(action, order, form, now, index) {
 function applyAction(action, order, form, now, index) {
   if (action === 'assign') {
     return {
-      order: { ...order, owner: form.owner, status: order.status === '待分派' ? '待处理' : order.status, assignmentReason: form.reason },
-      touchedKeys: ['owner', 'status', 'assignmentReason'],
+      order: { ...order, owner: form.owner, assignmentReason: form.reason },
+      touchedKeys: ['owner', 'assignmentReason'],
     };
   }
   if (action === 'markProcessing') {
@@ -107,8 +112,14 @@ function applyAction(action, order, form, now, index) {
   }
   if (action === 'reject') {
     return {
-      order: { ...order, status: '已驳回', rejectionReason: form.reason, rejectionNote: form.note || '' },
-      touchedKeys: ['status', 'rejectionReason', 'rejectionNote'],
+      order: {
+        ...order,
+        owner: order.owner === unassignedOwner ? '张晓' : order.owner,
+        status: '已驳回',
+        rejectionReason: form.reason,
+        rejectionNote: form.note || '',
+      },
+      touchedKeys: ['owner', 'status', 'rejectionReason', 'rejectionNote'],
     };
   }
   if (action === 'customerService' || action === 'createTask') {

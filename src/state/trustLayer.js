@@ -83,20 +83,47 @@ export function validateCompletionEvidence(evidence) {
   return errors;
 }
 
+const ACTIVE_COMPLETION_TARGETS = new Set(['处理中', '待确认', '已升级']);
+
+export function getCompletionTargetStatus(evidence) {
+  if (evidence?.resolvedSource === true) return '已完成';
+  if (evidence?.resolvedSource === false && ACTIVE_COMPLETION_TARGETS.has(evidence.targetStatus)) {
+    return evidence.targetStatus;
+  }
+  return '处理中';
+}
+
 export function buildCompletionPatch(task, evidence) {
+  const targetStatus = getCompletionTargetStatus(evidence);
+  const completed = targetStatus === '已完成';
   const referenceText = evidence.referenceNo ? `，关联单号 ${evidence.referenceNo}` : '';
+  const logPresentation = targetStatus === '已升级'
+    ? { action: '升级主管', tone: 'red' }
+    : targetStatus === '待确认'
+      ? { action: '提交待确认', tone: 'orange' }
+      : completed
+        ? { action: '完成任务', tone: 'green' }
+        : { action: '更新处理进度', tone: 'blue' };
   return {
-    status: '已完成',
-    remainingSLA: '-',
+    status: targetStatus,
+    ...(completed
+      ? {
+          previousRemainingSLA:
+            task.remainingSLA && task.remainingSLA !== '-'
+              ? task.remainingSLA
+              : task.previousRemainingSLA || '04:00:00',
+          remainingSLA: '-',
+        }
+      : { remainingSLA: task.remainingSLA }),
     completionEvidence: evidence,
     processLogs: [
       ...(task.processLogs || []),
       {
         time: '刚刚',
         owner: task.owner || '系统',
-        action: '完成任务',
+        action: logPresentation.action,
         detail: `${evidence.result}：${evidence.description}${referenceText}`,
-        tone: 'green',
+        tone: logPresentation.tone,
       },
     ],
   };

@@ -3,22 +3,46 @@ import test from 'node:test';
 
 import { inventory, orders, settings, tasks } from './mockData.js';
 
-const activeStatuses = new Set([
-  '待分派',
-  '已分派',
-  '待处理',
-  '处理中',
-  '待确认',
-  '已升级',
-  '已超时',
-]);
+test('task creation times are canonical, valid, and newest first', () => {
+  const parseCanonicalDateTime = (value) => {
+    const matched = /^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2})$/.exec(value);
+    if (!matched) return null;
 
-test('active tasks belong to the current business period', () => {
-  const activeTasks = tasks.filter((task) => activeStatuses.has(task.status));
+    const [, year, month, day, hour, minute, second] = matched.map(Number);
+    const timestamp = Date.UTC(year, month - 1, day, hour, minute, second);
+    const normalized = new Date(timestamp);
+    return (
+      normalized.getUTCFullYear() === year
+      && normalized.getUTCMonth() === month - 1
+      && normalized.getUTCDate() === day
+      && normalized.getUTCHours() === hour
+      && normalized.getUTCMinutes() === minute
+      && normalized.getUTCSeconds() === second
+    ) ? timestamp : null;
+  };
+  const timestamps = tasks.map((task) => parseCanonicalDateTime(task.createdAt));
 
-  assert.ok(activeTasks.length > 0);
+  assert.equal(timestamps.every((timestamp) => timestamp != null), true);
   assert.equal(
-    activeTasks.every((task) => /^2026-07-(16|17) /.test(task.createdAt)),
+    timestamps.every((timestamp, index) => index === 0 || timestamps[index - 1] >= timestamp),
+    true,
+  );
+  assert.ok(new Set(tasks.map((task) => task.createdAt.slice(0, 10))).size > 10);
+});
+
+test('task pagination progresses from newer pages to older pages', () => {
+  const pageSize = 9;
+  const pageDates = Array.from(
+    { length: Math.ceil(tasks.length / pageSize) },
+    (_, pageIndex) => tasks
+      .slice(pageIndex * pageSize, (pageIndex + 1) * pageSize)
+      .map((task) => task.createdAt),
+  );
+
+  assert.equal(pageDates[0][0].startsWith('2026-07-17 '), true);
+  assert.equal(pageDates.at(-1).at(-1).startsWith('2026-06-'), true);
+  assert.equal(
+    pageDates.slice(1).every((page, index) => pageDates[index].at(-1) >= page[0]),
     true,
   );
 });
@@ -40,6 +64,15 @@ test('June task history contains closed rows only', () => {
 test('current task history also contains recent closed rows', () => {
   assert.equal(
     tasks.some((task) => task.status === '已完成' && /^2026-07-(16|17) /.test(task.createdAt)),
+    true,
+  );
+});
+
+test('seed task logs do not drift with machine-relative day labels', () => {
+  assert.equal(
+    tasks.every((task) => task.processLogs.every(
+      (log) => !/^(今天|昨天|明天)/.test(log.time),
+    )),
     true,
   );
 });

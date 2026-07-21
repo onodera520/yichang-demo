@@ -19,6 +19,7 @@ import PageHeaderActionButton from '../components/common/PageHeaderActionButton.
 import PlatformLogo from '../components/common/PlatformLogo.jsx';
 import LiveUpdateTime from '../components/LiveUpdateTime.jsx';
 import { useToast } from '../components/common/Toast.jsx';
+import { buildRollingDateLabels } from '../data/demoTime.js';
 import { analytics } from '../data/mockData.js';
 import { useRefreshTime } from '../hooks/useRefreshTime.js';
 import aiAdoptionRateIcon from '../assets/analytics-icons/ai-adoption-rate.png';
@@ -70,17 +71,6 @@ const repeatedIssueRows = [
 
 const issueTypes = ['缺货', '平台同步失败', '物流异常', '清关异常', '地址异常', '平均'];
 
-function dayLabel(month, day) {
-  return `${month}.${String(day).padStart(2, '0')}`;
-}
-
-function rollingDateLabels() {
-  return [
-    ...Array.from({ length: 29 }, (_, index) => dayLabel(5, index + 3)),
-    dayLabel(6, 1),
-  ];
-}
-
 function buildTrendData(labels, seed = 0) {
   return labels.map((date, index) => {
     const phase = index + seed;
@@ -124,7 +114,7 @@ function getDateTicks(data) {
   return tickIndexes.map((index) => data[index]?.date).filter(Boolean);
 }
 
-const last30DayLabels = rollingDateLabels();
+const last30DayLabels = buildRollingDateLabels(30);
 const yearlyEfficiencyData = [
   { date: '2025.07', averageMinutes: 43, processedCount: 23840 },
   { date: '2025.08', averageMinutes: 39, processedCount: 25210 },
@@ -138,6 +128,7 @@ const yearlyEfficiencyData = [
   { date: '2026.04', averageMinutes: 32, processedCount: 34720 },
   { date: '2026.05', averageMinutes: 37, processedCount: 33460 },
   { date: '2026.06', averageMinutes: 31, processedCount: 36150 },
+  { date: '2026.07', averageMinutes: 30, processedCount: 18420 },
 ];
 
 const trendDataByRange = {
@@ -262,17 +253,30 @@ function TrendPanel({ range, open, setOpen, setRange }) {
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={data} margin={{ top: 4, right: 8, left: -16, bottom: 0 }}>
             <CartesianGrid stroke="#E8EDF5" vertical={false} />
-            <XAxis dataKey="date" ticks={dateTicks} interval={0} axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#5F6B7A' }} />
+            <XAxis dataKey="date" ticks={dateTicks} interval={0} padding={{ left: 8, right: 20 }} axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#5F6B7A' }} />
             <YAxis domain={[0, 1000]} axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#5F6B7A' }} />
             <Tooltip contentStyle={{ borderRadius: 10, borderColor: '#D7DEE9' }} />
             {trendLines.map((line) => (
               <Line key={line.key} type="monotone" dataKey={line.key} name={line.name} dot={showDots ? { r: 3, fill: line.color } : false} stroke={line.color} strokeWidth={2.6} activeDot={{ r: 4 }} />
             ))}
-            <Legend iconType="circle" wrapperStyle={{ paddingTop: 8, fontSize: 12 }} />
+            <Legend content={<TrendLegend />} />
           </LineChart>
         </ResponsiveContainer>
       </div>
     </Panel>
+  );
+}
+
+function TrendLegend({ payload = [] }) {
+  return (
+    <div className="mx-auto flex w-full max-w-[520px] items-center justify-between pt-2 text-xs">
+      {payload.map((item) => (
+        <span key={item.dataKey ?? item.value} className="inline-flex items-center gap-2 whitespace-nowrap" style={{ color: item.color }}>
+          <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: item.color }} />
+          {item.value}
+        </span>
+      ))}
+    </div>
   );
 }
 

@@ -6,10 +6,28 @@ const formatModule = await import('../utils/formatMetricValue.js').catch(() => (
 }));
 
 const metricGroups = [
-  { name: 'dashboard', metrics: mockData.dashboardStats, expectedCount: 5 },
   { name: 'inventory', metrics: mockData.inventoryMetricStats ?? [], expectedCount: 4 },
   { name: 'analytics', metrics: mockData.analytics.overviewMetrics, expectedCount: 6 },
 ];
+
+assert.equal(
+  'dashboardStats' in mockData,
+  false,
+  'dashboard current values should be derived from shared live state rather than fixed mock totals',
+);
+
+assert.deepEqual(Object.keys(mockData.dashboardMetricHistory), [
+  'highRiskOrders',
+  'stockoutSoon',
+  'logisticsDelay',
+  'afterSale',
+  'potentialLoss',
+]);
+
+for (const points of Object.values(mockData.dashboardMetricHistory)) {
+  assert.ok(points.length >= 2, 'dashboard history should contain at least two snapshots');
+  points.forEach((value) => assert.equal(Number.isFinite(value), true));
+}
 
 assert.equal(
   typeof formatModule.formatMetricValue,

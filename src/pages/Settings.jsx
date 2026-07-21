@@ -3,6 +3,7 @@ import { ChevronRight, HelpCircle, Plus, RefreshCw, Settings as SettingsIcon, X 
 import PageHeaderActionButton from '../components/common/PageHeaderActionButton.jsx';
 import PlatformLogo from '../components/common/PlatformLogo.jsx';
 import { useToast } from '../components/common/Toast.jsx';
+import { buildBusinessDateTime } from '../data/demoTime.js';
 import { settings } from '../data/mockData.js';
 import { useDemoState } from '../state/DemoStateContext.jsx';
 
@@ -26,11 +27,11 @@ const notificationRows = [
 
 const connectedStores = [
   ...settings.storeSyncStatus,
-  { storeName: 'Shopee-SG', platform: 'Shopee', region: '新加坡', syncStatus: '成功', lastSyncAt: '2026-06-01 09:08:25' },
-  { storeName: 'Shopee-MY', platform: 'Shopee', region: '马来西亚', syncStatus: '成功', lastSyncAt: '2026-06-01 09:05:48' },
-  { storeName: 'Amazon-JP', platform: 'Amazon', region: '日本', syncStatus: '成功', lastSyncAt: '2026-06-01 09:02:36' },
-  { storeName: 'TikTok Shop-TH', platform: 'TikTok Shop', region: '泰国', syncStatus: '延迟', lastSyncAt: '2026-06-01 08:58:12' },
-  { storeName: 'Shopify-US', platform: 'Shopify', region: '美国', syncStatus: '成功', lastSyncAt: '2026-06-01 08:55:09' },
+  { storeName: 'Shopee-SG', platform: 'Shopee', region: '新加坡', syncStatus: '成功', lastSyncAt: buildBusinessDateTime({ hour: 9, minute: 8, second: 25 }) },
+  { storeName: 'Shopee-MY', platform: 'Shopee', region: '马来西亚', syncStatus: '成功', lastSyncAt: buildBusinessDateTime({ hour: 9, minute: 5, second: 48 }) },
+  { storeName: 'Amazon-JP', platform: 'Amazon', region: '日本', syncStatus: '成功', lastSyncAt: buildBusinessDateTime({ hour: 9, minute: 2, second: 36 }) },
+  { storeName: 'TikTok Shop-TH', platform: 'TikTok Shop', region: '泰国', syncStatus: '延迟', lastSyncAt: buildBusinessDateTime({ hour: 8, minute: 58, second: 12 }) },
+  { storeName: 'Shopify-US', platform: 'Shopify', region: '美国', syncStatus: '未授权', lastSyncAt: '-' },
 ];
 
 const STORE_PAGE_SIZE = 5;

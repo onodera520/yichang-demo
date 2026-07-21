@@ -4,6 +4,7 @@ import {
   calculateAvailableDays,
   calculateDataCompleteness,
   calculateSuggestedReplenishment,
+  getCompletionTargetStatus,
   getReplenishmentQuantity,
   getVisibleAiRisks,
   hasTaskSource,
@@ -112,14 +113,50 @@ const completionEvidence = {
   attachment: { name: '出库截图.png', size: 204800 },
 };
 const completionPatch = buildCompletionPatch(
-  { owner: '王敏', processLogs: [{ time: '今天 10:24', action: '创建任务' }] },
+  { owner: '王敏', remainingSLA: '03:15:00', processLogs: [{ time: '今天 10:24', action: '创建任务' }] },
   completionEvidence,
 );
 
 assert.equal(completionPatch.status, '已完成');
 assert.equal(completionPatch.remainingSLA, '-');
+assert.equal(completionPatch.previousRemainingSLA, '03:15:00');
 assert.deepEqual(completionPatch.completionEvidence, completionEvidence);
 assert.equal(completionPatch.processLogs.length, 2);
 assert.match(completionPatch.processLogs[1].detail, /NJ-OUT-260601-032/);
+
+assert.equal(getCompletionTargetStatus({ resolvedSource: true }), '已完成');
+assert.equal(getCompletionTargetStatus({ resolvedSource: false }), '处理中');
+assert.equal(
+  getCompletionTargetStatus({ resolvedSource: false, targetStatus: '已升级' }),
+  '已升级',
+);
+assert.equal(
+  getCompletionTargetStatus({ resolvedSource: false, targetStatus: '已完成' }),
+  '处理中',
+  'an unresolved source must never complete the task',
+);
+
+const upgradedPatch = buildCompletionPatch(
+  { owner: '王敏', remainingSLA: '01:42:31', processLogs: [] },
+  {
+    result: '无法切换已升级',
+    description: '目标仓库存不足，已升级主管处理',
+    resolvedSource: false,
+    targetStatus: '已升级',
+  },
+);
+assert.equal(upgradedPatch.status, '已升级');
+assert.equal(upgradedPatch.remainingSLA, '01:42:31');
+assert.equal(upgradedPatch.previousRemainingSLA, undefined);
+assert.equal(upgradedPatch.processLogs.at(-1).action, '升级主管');
+assert.equal(upgradedPatch.processLogs.at(-1).tone, 'red');
+
+const unresolvedPatch = buildCompletionPatch(
+  { owner: '王敏', remainingSLA: '03:15:00', processLogs: [] },
+  { result: '部分完成', description: '剩余事项继续处理', resolvedSource: false },
+);
+assert.equal(unresolvedPatch.status, '处理中');
+assert.equal(unresolvedPatch.remainingSLA, '03:15:00');
+assert.equal(unresolvedPatch.processLogs.at(-1).action, '更新处理进度');
 
 console.log('trust layer tests passed');

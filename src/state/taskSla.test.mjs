@@ -13,6 +13,16 @@ assert.deepEqual(
 
 assert.deepEqual(
   getTaskSlaPresentation(
+    { status: '处理中', remainingSLA: '04:00:00', overdueDuration: '01:15:00' },
+    0,
+    0,
+  ),
+  { state: 'overdue', seconds: 4500, label: '超时 01:15:00' },
+  'overdue SLA should not replace the workflow status',
+);
+
+assert.deepEqual(
+  getTaskSlaPresentation(
     { status: '处理中', remainingSLA: '00:30:00' },
     45 * 60 * 1000,
     0,

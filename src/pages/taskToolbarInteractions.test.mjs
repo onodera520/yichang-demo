@@ -9,7 +9,7 @@ const createModalSource = fs.readFileSync(createModalUrl, 'utf8');
 for (const handler of [
   'onBulkTransfer',
   'onBulkUpgrade',
-  'onBulkClose',
+  'onBulkRemind',
   'onExport',
   'onSort',
   'onRefresh',
@@ -20,7 +20,10 @@ for (const handler of [
 
 assert.match(tasksSource, /\.\.\.buttonProps/, 'TableButton should forward standard button props');
 assert.match(tasksSource, /<TaskCreateModal\b/, 'Tasks should render the manual task modal');
-assert.match(tasksSource, /<ConfirmActionDialog\b/, 'batch upgrade and close should require confirmation');
+assert.match(tasksSource, /<ConfirmActionDialog\b/, 'batch upgrade should require confirmation');
+assert.match(tasksSource, />批量催办<\//, 'task toolbar should expose batch reminders');
+assert.doesNotMatch(tasksSource, /批量关闭/, 'task toolbar should not expose batch close');
+assert.doesNotMatch(tasksSource, /onBulkClose/, 'TaskTable should not expose a batch close handler');
 assert.match(tasksSource, /buildTasksCsv/, 'export should use the shared CSV builder');
 assert.match(tasksSource, /sortTasksByDeadline/, 'deadline sort should use the shared comparator');
 assert.match(tasksSource, /calculateDeadlineDistribution/, 'deadline stats should use the shared live distribution calculator');

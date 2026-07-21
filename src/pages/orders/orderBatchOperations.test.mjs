@@ -34,7 +34,7 @@ const assigned = executeBatchOperation('assign', orders, {
 assert.equal(assigned.successes.length, 1);
 assert.equal(assigned.failures.length, 2);
 assert.equal(assigned.orders.find((order) => order.id === 'a').owner, '陈浩');
-assert.equal(assigned.orders.find((order) => order.id === 'a').status, '待处理');
+assert.equal(assigned.orders.find((order) => order.id === 'a').status, '待分派');
 assert.match(assigned.failures.find((item) => item.id === 'b').reason, /平台/);
 assert.match(assigned.failures.find((item) => item.id === 'c').reason, /已完成/);
 
@@ -42,17 +42,25 @@ const processing = executeBatchOperation('markProcessing', [orders[0]], {}, { co
 assert.equal(processing.orders[0].owner, '张晓');
 assert.equal(processing.orders[0].status, '处理中');
 
-const service = executeBatchOperation('customerService', [orders[0]], {
+const assignedOrder = { ...orders[0], owner: '陈浩' };
+const service = executeBatchOperation('customerService', [assignedOrder], {
   queue: '物流客服',
   reason: '物流轨迹需要人工核实',
   priority: '高',
 }, { connections, tasks: [], now: 3000 });
 assert.equal(service.tasksToAdd.length, 1);
 assert.equal(service.tasksToAdd[0].sourceType, '客服协同');
-assert.equal(service.orders[0].owner, '未分派', '转客服不得改变订单负责人');
+assert.equal(service.tasksToAdd[0].owner, '陈浩');
+assert.equal(service.tasksToAdd[0].status, '已分派');
+assert.equal(service.orders[0].owner, '陈浩', '转客服沿用已分派负责人');
+
+const pendingTaskPreview = previewBatchOperation('createTask', [orders[1]], { connections: [{ platform: 'eBay', status: '已连接' }], tasks: [] });
+assert.match(pendingTaskPreview.details[0].reason, /采纳/);
+const unassignedTaskPreview = previewBatchOperation('createTask', [orders[0]], { connections, tasks: [] });
+assert.match(unassignedTaskPreview.details[0].reason, /分派/);
 
 const duplicateTask = { id: 'existing', sourceKind: 'order', sourceId: 'a', sourceType: '来源订单', status: '待分派' };
-const generated = executeBatchOperation('createTask', [orders[0]], {
+const generated = executeBatchOperation('createTask', [assignedOrder], {
   owner: '王敏', deadline: '今天 18:00', description: '处理异常',
 }, { connections, tasks: [duplicateTask], now: 4000 });
 assert.equal(generated.successes.length, 0);
@@ -73,7 +81,7 @@ assert.equal(undo.successes.length, 1);
 assert.equal(undo.orders.find((order) => order.id === 'a').owner, '未分派');
 assert.equal(undo.orders.find((order) => order.id === 'a').status, '待分派');
 
-const changedAfterAssign = assigned.orders.map((order) => order.id === 'a' ? { ...order, status: '处理中' } : order);
+const changedAfterAssign = assigned.orders.map((order) => order.id === 'a' ? { ...order, owner: '赵宁' } : order);
 const conflictedUndo = undoBatchOperation(assigned.record, changedAfterAssign, []);
 assert.equal(conflictedUndo.successes.length, 0);
 assert.match(conflictedUndo.failures[0].reason, /状态已变化/);

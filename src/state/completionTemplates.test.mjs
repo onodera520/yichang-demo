@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import * as completionTemplateApi from './completionTemplates.js';
 import { applyCompletionTemplate, getCompletionTemplates } from './completionTemplates.js';
 
 const cases = [
@@ -19,6 +20,7 @@ for (const [title, sourceType, expectedFirstLabel] of cases) {
   assert.equal(templates.length, 3, `${title} should provide exactly three templates`);
   assert.equal(templates[0].label, expectedFirstLabel, `${title} should use the expected template category`);
   assert.equal(templates[0].resolvedSource, true, `${title} success template should resolve the source`);
+  assert.equal(templates[0].targetStatus, '已完成', `${title} success template should complete the task`);
   assert.equal(
     templates.every((template) => template.description.includes('SOURCE-001')),
     true,
@@ -61,6 +63,11 @@ const warehouseTemplates = getCompletionTemplates({
 });
 assert.equal(warehouseTemplates[1].resolvedSource, false);
 assert.equal(warehouseTemplates[2].resolvedSource, false);
+assert.deepEqual(
+  warehouseTemplates.map((template) => template.targetStatus),
+  ['已完成', '处理中', '已升级'],
+  'blocked warehouse switching must upgrade instead of completing',
+);
 
 const replenishmentTemplates = getCompletionTemplates({
   title: '补货风险处理',
@@ -102,5 +109,19 @@ assert.equal(filledForm.quantity, '8');
 assert.equal(filledForm.cost, '304');
 assert.deepEqual(filledForm.attachment, existingForm.attachment);
 assert.equal(applyCompletionTemplate(existingForm, warehouseTemplates[2]).resolvedSource, 'no');
+
+assert.equal(typeof completionTemplateApi.getCompletionDialogCopy, 'function');
+assert.deepEqual(completionTemplateApi.getCompletionDialogCopy('已升级'), {
+  title: '升级任务',
+  submitLabel: '确认升级',
+});
+assert.deepEqual(completionTemplateApi.getCompletionDialogCopy('处理中'), {
+  title: '提交处理结果',
+  submitLabel: '提交处理结果',
+});
+assert.deepEqual(completionTemplateApi.getCompletionDialogCopy('已完成'), {
+  title: '完成任务',
+  submitLabel: '提交完成',
+});
 
 console.log('completion template tests passed');

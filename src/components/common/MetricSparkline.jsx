@@ -76,6 +76,7 @@ export default function MetricSparkline({
   color,
   markerColor = color,
   animationDelay = 0,
+  compact = false,
   label,
   formatValue = (value) => value,
 }) {
@@ -87,11 +88,12 @@ export default function MetricSparkline({
   const max = Math.max(...points);
   const range = max - min || 1;
   const domainPadding = range * 0.14;
+  const positionClassName = compact ? 'bottom-2.5 h-5' : 'bottom-4 h-6';
 
   return (
     <div
       aria-label={`${label}趋势`}
-      className={`metric-sparkline-host absolute bottom-4 left-6 right-6 z-[1] h-6 ${reducedMotion ? 'metric-sparkline-motion-off' : ''}`}
+      className={`metric-sparkline-host absolute left-6 right-6 z-[1] ${positionClassName} ${reducedMotion ? 'metric-sparkline-motion-off' : ''}`}
       role="img"
       style={{
         '--metric-sparkline-color': color,

@@ -1,13 +1,46 @@
 import assert from 'node:assert/strict';
+import test from 'node:test';
 import * as taskOperations from './taskOperations.js';
 import {
+  buildTaskReminderPatch,
   buildBatchTaskPatch,
   buildTasksCsv,
   calculateTeamTaskOverview,
   resolveExportTasks,
+  sortTasksByCreatedAt,
   sortTasksByDeadline,
   updateTasksByIds,
 } from './taskOperations.js';
+
+test('催办只追加主管提醒记录，不改变处理中状态和负责人', () => {
+  const task = {
+    id: 'task-remind',
+    status: '处理中',
+    owner: '王敏',
+    processLogs: [],
+  };
+
+  assert.deepEqual(buildTaskReminderPatch(task), {
+    ...task,
+    processLogs: [{
+      time: '刚刚',
+      owner: '张晓',
+      action: '主管催办',
+      detail: '已提醒负责人尽快处理',
+      tone: 'orange',
+    }],
+  });
+});
+
+test('已分派任务使用提醒接单文案且保持已分派', () => {
+  const task = { id: 'task-assigned', status: '已分派', owner: '赵宁', processLogs: [] };
+  const reminded = buildTaskReminderPatch(task);
+
+  assert.equal(reminded.status, '已分派');
+  assert.equal(reminded.owner, '赵宁');
+  assert.equal(reminded.processLogs.at(-1).action, '提醒接单');
+  assert.equal(reminded.processLogs.at(-1).detail, '已提醒负责人尽快接单');
+});
 
 assert.equal(
   typeof taskOperations.calculateDeadlineDistribution,
@@ -31,18 +64,26 @@ assert.equal(transferred.status, '已分派');
 assert.equal(transferred.processLogs.at(-1).time, '刚刚');
 assert.equal(transferred.processLogs.at(-1).action, '转交任务');
 
-const upgraded = buildBatchTaskPatch('upgrade')(baseTask);
+assert.equal(
+  buildBatchTaskPatch('transfer')(baseTask),
+  baseTask,
+  '转交任务必须提供具体负责人',
+);
+assert.equal(
+  buildBatchTaskPatch('upgrade')(baseTask),
+  baseTask,
+  '未分派任务不能直接升级',
+);
+const assignedTask = { ...baseTask, owner: '王敏', status: '处理中' };
+const upgraded = buildBatchTaskPatch('upgrade')(assignedTask);
 assert.equal(upgraded.status, '已升级');
 assert.equal(upgraded.processLogs.at(-1).action, '升级任务');
 
-const sourceTask = { ...baseTask, sourceKind: 'order', sourceId: 'order-001' };
-const sourceSnapshot = structuredClone(sourceTask);
-const closed = buildBatchTaskPatch('close')(sourceTask);
-assert.equal(closed.status, '已完成');
-assert.equal(closed.remainingSLA, '-');
-assert.equal(closed.processLogs.at(-1).action, '关闭任务');
-assert.deepEqual(sourceTask, sourceSnapshot, '批量关闭不能修改来源任务对象');
-assert.notEqual(closed, sourceTask);
+assert.equal(
+  buildBatchTaskPatch('close')(assignedTask),
+  assignedTask,
+  '批量关闭不再是受支持的任务操作',
+);
 
 const sortableTasks = [
   { id: 'slow', status: '处理中', remainingSLA: '05:00:00' },
@@ -63,6 +104,23 @@ assert.deepEqual(
   ['slow', 'fast-a', 'fast-b', 'done', 'invalid', 'invalid-range', 'closed'],
 );
 assert.deepEqual(sortableTasks, sortableSnapshot, '排序不得修改输入数组或任务对象');
+
+const createdAtTasks = [
+  { id: 'older', createdAt: '2026-06-25 09:30:00' },
+  { id: 'invalid', createdAt: '2026-06-009 09:056:00' },
+  { id: 'newest', createdAt: '刚刚' },
+  { id: 'same-a', createdAt: '2026-07-17 12:00:00' },
+  { id: 'same-b', createdAt: '2026-07-17 12:00:00' },
+  { id: 'newer', createdAt: '2026-07-17 15:30:00' },
+  { id: 'missing' },
+];
+const createdAtSnapshot = structuredClone(createdAtTasks);
+assert.deepEqual(
+  sortTasksByCreatedAt(createdAtTasks).map((task) => task.id),
+  ['newest', 'newer', 'same-a', 'same-b', 'older', 'invalid', 'missing'],
+  '创建时间排序应最新优先、同时间稳定，并把非法日期放在末尾',
+);
+assert.deepEqual(createdAtTasks, createdAtSnapshot, '创建时间排序不得修改输入数组或任务对象');
 
 const allTasks = [{ id: 'task-1' }, { id: 'task-2' }, { id: 'task-3' }];
 const filteredTasks = [{ id: 'task-3' }, { id: 'task-1' }];
@@ -121,9 +179,8 @@ assert.equal(
   'a live SLA reaching zero should move into overdue',
 );
 
-const overdueTask = { id: 'overdue-close', status: '已超时', remainingSLA: '00:00:00', processLogs: [] };
+const overdueTask = { id: 'overdue-task', owner: '王敏', status: '处理中', remainingSLA: '00:00:00', processLogs: [] };
 assert.equal(calculateDeadlineDistribution([overdueTask], 0, 0).overdue, 1);
-assert.equal(calculateDeadlineDistribution([buildBatchTaskPatch('close')(overdueTask)], 0, 0).overdue, 0);
 assert.equal(
   calculateDeadlineDistribution([{ status: '待分派', remainingSLA: '04:00:00' }], 0, 0).within8Hours,
   1,

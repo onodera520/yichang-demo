@@ -15,6 +15,7 @@ export default function SlaCountdown({
   urgentClassName = 'text-[#FF1F1F]',
   mutedClassName = 'text-[#5F6B7A]',
   showOverdueLabel = true,
+  overdueLabelOnly = false,
 }) {
   const remainingSeconds = getRemainingSlaSeconds(value, nowMs, anchorMs);
 
@@ -25,6 +26,14 @@ export default function SlaCountdown({
   const overdue = isSlaOverdue(remainingSeconds);
   const urgent = overdue || isSlaUrgent(remainingSeconds);
   const toneClassName = urgent ? urgentClassName : normalClassName;
+
+  if (overdue && overdueLabelOnly) {
+    return (
+      <span className={`${toneClassName} ${className}`.trim()}>
+        已超时
+      </span>
+    );
+  }
 
   return (
     <span className={`${toneClassName} ${className}`.trim()}>
