@@ -48,6 +48,7 @@ import {
 } from '../state/dashboardInbox.js';
 import { getTaskSlaPresentation } from '../state/taskSla.js';
 import { useTopbarFilter } from '../state/TopbarFilterContext.jsx';
+import { formatCountUnit } from '../utils/chartUnits.js';
 import { formatMetricValue } from '../utils/formatMetricValue.js';
 import { getOperationalPriorityRows } from '../utils/orderSorting.js';
 import {
@@ -78,14 +79,14 @@ const trendLines = [
 
 const todos = [
   { key: 'overdue', label: '已超时任务', icon: Clock3, color: '#FF1F1F' },
-  { key: 'pendingConfirmation', label: '待确认任务', icon: PackageCheck, color: '#FF8A00' },
+  { key: 'pendingConfirmation', label: '待验收任务', icon: PackageCheck, color: '#FF8A00' },
   { key: 'dueToday', label: '今日到期任务', icon: MessageCircle, color: '#2F7BFF' },
 ];
 
 const todoTabs = [
   { key: 'all', label: '全部' },
   { key: 'overdue', label: '已超时' },
-  { key: 'pendingConfirmation', label: '待确认' },
+  { key: 'pendingConfirmation', label: '待验收' },
   { key: 'dueToday', label: '今日到期' },
 ];
 
@@ -381,11 +382,12 @@ function TrendPanel() {
               domain={[0, 800]}
               ticks={[0, 200, 400, 600, 800]}
               tick={{ fontSize: 11, fill: '#5F6B7A' }}
+              tickFormatter={formatCountUnit}
             />
             <Tooltip
               formatter={(value, name) => {
                 const matchedLine = trendLines.find((line) => line.key === name);
-                return [value, matchedLine?.name ?? name];
+                return [formatCountUnit(value), matchedLine?.name ?? name];
               }}
             />
             {visibleLines.map((line) => (

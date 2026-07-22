@@ -147,6 +147,7 @@ export function buildSuggestionTask(suggestion, context = {}) {
 export function completeTaskState(state, taskId, completionEvidence) {
   const targetTask = state.tasks.find((task) => task.id === taskId);
   if (!targetTask) return state;
+  if (!completionEvidence) return state;
   const targetStatus = completionEvidence
     ? getCompletionTargetStatus(completionEvidence)
     : '已完成';

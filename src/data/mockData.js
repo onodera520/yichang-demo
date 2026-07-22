@@ -14,6 +14,7 @@ const seedOrders = [
     orderNo: 'AMZ-US-240613-0188',
     riskLevel: '高',
     abnormalType: '缺货',
+    abnormalDetail: 'LA仓可用库存不足',
     store: 'US-旗舰店',
     platform: 'Amazon',
     country: '美国',
@@ -31,6 +32,7 @@ const seedOrders = [
     orderNo: 'TTS-US-240613-0316',
     riskLevel: '高',
     abnormalType: '物流延误',
+    abnormalDetail: '物流轨迹48小时未更新',
     store: 'US-旗舰店',
     platform: 'TikTok Shop',
     country: '美国',
@@ -48,6 +50,7 @@ const seedOrders = [
     orderNo: 'SHP-UK-240613-0061',
     riskLevel: '中',
     abnormalType: '地址异常',
+    abnormalDetail: '邮编与城市不匹配',
     store: 'UK-品牌店',
     platform: 'Shopee',
     country: '英国',
@@ -65,6 +68,7 @@ const seedOrders = [
     orderNo: 'EBY-DE-240613-0098',
     riskLevel: '中',
     abnormalType: '平台同步失败',
+    abnormalDetail: 'ERP订单状态回写失败',
     store: 'DE-生活馆',
     platform: 'eBay',
     country: '德国',
@@ -82,6 +86,7 @@ const seedOrders = [
     orderNo: 'AMZ-CA-240613-0114',
     riskLevel: '低',
     abnormalType: '退款',
+    abnormalDetail: '退款原因与物流轨迹不一致',
     store: 'CA-旗舰店',
     platform: 'Amazon',
     country: '加拿大',
@@ -99,6 +104,7 @@ const seedOrders = [
     orderNo: 'AMZ-JP-240612-0095',
     riskLevel: '中',
     abnormalType: '清关异常',
+    abnormalDetail: '报关资料缺少品名说明',
     store: 'JP-旗舰店',
     platform: 'Amazon',
     country: '日本',
@@ -116,6 +122,7 @@ const seedOrders = [
     orderNo: 'TTS-US-240612-0221',
     riskLevel: '中',
     abnormalType: '支付异常',
+    abnormalDetail: '支付状态与平台回调不一致',
     store: 'US-旗舰店',
     platform: 'TikTok Shop',
     country: '美国',
@@ -133,6 +140,7 @@ const seedOrders = [
     orderNo: 'SHP-AU-240612-0183',
     riskLevel: '高',
     abnormalType: '缺货',
+    abnormalDetail: 'AU仓可用库存不足',
     store: 'AU-轻奢店',
     platform: 'Shopee',
     country: '澳大利亚',
@@ -150,6 +158,7 @@ const seedOrders = [
     orderNo: 'AMZ-FR-240612-0177',
     riskLevel: '中',
     abnormalType: '物流延误',
+    abnormalDetail: '尾程派送超时',
     store: 'FR-旗舰店',
     platform: 'Amazon',
     country: '法国',
@@ -167,6 +176,7 @@ const seedOrders = [
     orderNo: 'EBY-IT-240612-0160',
     riskLevel: '低',
     abnormalType: '地址异常',
+    abnormalDetail: '缺少楼栋或门牌号',
     store: 'IT-旗舰店',
     platform: 'eBay',
     country: '意大利',
@@ -184,6 +194,7 @@ const seedOrders = [
     orderNo: 'EBY-DE-240615-0177',
     riskLevel: '低',
     abnormalType: '发票异常',
+    abnormalDetail: '平台税务字段同步失败',
     store: 'DE-生活馆',
     platform: 'eBay',
     country: '德国',
@@ -201,6 +212,7 @@ const seedOrders = [
     orderNo: 'SHP-AU-240611-0281',
     riskLevel: '中',
     abnormalType: '退款',
+    abnormalDetail: '退款凭证不完整',
     store: 'AU-轻奢店',
     platform: 'Shopee',
     country: '澳大利亚',
@@ -219,10 +231,25 @@ const orderPlatforms = ['Amazon', 'TikTok Shop', 'Shopee', 'eBay'];
 const orderCountries = ['美国', '英国', '德国', '日本', '加拿大', '澳大利亚', '法国', '西班牙', '意大利', '墨西哥'];
 const orderStores = ['US-旗舰店', 'UK-品牌店', 'DE-生活馆', 'JP-旗舰店', 'CA-旗舰店', 'AU-轻奢店', 'FR-家居店', 'ES-数码店'];
 const orderTypes = ['缺货', '物流延误', '地址异常', '平台同步失败', '支付异常', '退款', '清关异常', '发票异常'];
+const orderAbnormalDetails = {
+  地址异常: ['收货地址拼写错误', '邮编与城市不匹配', '缺少楼栋或门牌号', '收件人姓名疑似不实', '地址超出配送范围'],
+  缺货: ['可用库存不足', '锁定库存释放失败', '仓库库存账实不符', '跨仓调拨库存未到位', '在途库存延迟入仓'],
+  物流延误: ['物流轨迹48小时未更新', '揽收后长时间未中转', '包裹滞留分拨中心', '承运商扫描节点缺失', '尾程派送超时'],
+  平台同步失败: ['ERP订单状态回写失败', '平台订单状态拉取超时', '库存数量同步不一致', '物流单号回传失败', '平台接口鉴权失效'],
+  支付异常: ['支付成功但订单未确认', '支付金额与订单不一致', '疑似重复扣款', '支付回调丢失', '付款币种不匹配'],
+  退款: ['退款凭证不完整', '退款原因与物流轨迹不一致', '重复退款申请', '退款金额超过可退金额', '退货未入库即申请退款'],
+  清关异常: ['报关资料缺失', 'HS编码与商品不匹配', '申报金额异常', '收件人税号缺失', '清关文件审核超时'],
+  发票异常: ['发票抬头信息不完整', '税号格式错误', '发票金额与订单不一致', '发票开具失败', '平台税务字段同步失败'],
+};
 const orderOwners = ['王敏', '赵宁', '陈浩', '未分派', '刘畅', '张磊', '李娜', '周扬'];
 const orderStatuses = ['待处理', '处理中', '待分派', '已完成', '已驳回'];
 const orderSkuPool = ['ELE-HEAD-01', 'CAR-VAC-01', 'ACC-PHONE-01', 'HOM-HUM-03', 'OUT-WB-01', 'ELE-KYB-01', 'PET-FEED-02', 'KID-LAMP-05'];
 const countryCodes = { 美国: 'US', 英国: 'UK', 德国: 'DE', 日本: 'JP', 加拿大: 'CA', 澳大利亚: 'AU', 法国: 'FR', 西班牙: 'ES', 意大利: 'IT', 墨西哥: 'MX' };
+
+function getOrderAbnormalDetail(type, index) {
+  const details = orderAbnormalDetails[type] ?? [`${type}待核实`];
+  return details[Math.floor(index / orderTypes.length) % details.length];
+}
 
 function pad(value, size = 3) {
   return String(value).padStart(size, '0');
@@ -267,6 +294,7 @@ function createOrder(index) {
     orderNo,
     riskLevel,
     abnormalType: type,
+    abnormalDetail: getOrderAbnormalDetail(type, index),
     store,
     platform,
     country,
@@ -604,7 +632,7 @@ const seedTaskRows = [
     source: 'TTS-US-240613-0316',
     riskLevel: '中',
     owner: '赵宁',
-    status: '待确认',
+    status: '待验收',
     remainingSLA: '00:46:12',
     createdAt: '2026-06-01 09:50',
     description: 'TikTok Shop 订单物流轨迹超过 48 小时未更新。',
@@ -676,7 +704,7 @@ const seedTaskRows = [
     source: 'AMZ-JP-240612-0095',
     riskLevel: '中',
     owner: '张磊',
-    status: '待确认',
+    status: '待验收',
     remainingSLA: '08:35:11',
     createdAt: '2026-06-01 08:12',
     description: '清关资料缺少品名补充说明，需上传资料避免订单积压。',
@@ -742,7 +770,7 @@ const seedTasks = seedTaskRows.map((task, index) => {
   };
 });
 
-const taskStatuses = ['待分派', '已分派', '处理中', '待确认', '已完成', '已升级'];
+const taskStatuses = ['待分派', '已分派', '处理中', '待验收', '已完成', '已升级'];
 const taskSources = ['来源订单', '库存风险', '物流异常', '平台同步', '售后异常'];
 const taskTitles = ['切换发货仓库', '补货风险处理', '物流延误跟进', '平台同步修复', '退款复核确认', '清关资料补充', '发票信息重开', '库存数据校准'];
 const assignedTaskOwners = orderOwners.filter((owner) => owner !== '未分派');
@@ -791,21 +819,65 @@ function createTask(index) {
   };
 }
 
+function buildMockCompletionEvidence(task, index) {
+  return {
+    result: `${task.title}已处理`,
+    description: `${task.owner}已完成处理并回写执行结果，相关数据已经复核。`,
+    resolvedSource: true,
+    referenceNo: `EV-${String(index + 1).padStart(4, '0')}`,
+    quantity: String(3 + (index % 18)),
+    cost: String(120 + (index * 37) % 900),
+    attachment: { name: `${task.id}-处理凭证.pdf`, size: 128000 + index * 1024 },
+    submittedBy: task.owner,
+    submittedAt: task.createdAt,
+  };
+}
+
+function buildMockAcceptance(index) {
+  return {
+    reviewer: '张晓',
+    reviewedAt: buildBusinessDateTime({ daysAgo: Math.floor(index / 4), hour: 18, minute: (index * 7) % 60 }),
+    note: '已核对员工处理结果、执行凭证和来源状态。',
+    checks: [
+      { key: 'evidence', label: '处理结果和执行说明完整', passed: true },
+      { key: 'resolvedSource', label: '员工已标记原异常解决', passed: true },
+      { key: 'proof', label: '已提供关联单号或附件凭证', passed: true },
+      { key: 'source', label: '来源对象存在且可核验', passed: true },
+    ],
+  };
+}
+
 export const tasks = [
   ...seedTasks,
   ...Array.from({ length: 89 - seedTasks.length }, (_, index) => createTask(index + seedTasks.length)),
 ].map((task, index) => {
   const owner = task.owner === '未分派' ? assignedTaskOwners[index % assignedTaskOwners.length] : task.owner;
   const status = task.status === '待分派' ? '已分派' : task.status;
+  const requiresEvidence = status === '待验收' || status === '已完成';
+  const completionEvidence = requiresEvidence
+    ? task.completionEvidence || buildMockCompletionEvidence({ ...task, owner }, index)
+    : task.completionEvidence;
+  const acceptance = status === '已完成'
+    ? task.acceptance || buildMockAcceptance(index)
+    : task.acceptance;
+  const processLogs = (task.processLogs || []).map((log) => (
+    log.action === '等待分派'
+      ? { ...log, owner, action: '接收任务', detail: `负责人 ${owner} 已进入处理队列`, tone: 'green' }
+      : log
+  ));
+  if (status === '待验收' && !processLogs.some((log) => log.action === '提交验收')) {
+    processLogs.push({ time: '今天 10:18', owner, action: '提交验收', detail: '员工已提交处理结果和执行凭证', tone: 'orange' });
+  }
+  if (status === '已完成' && !processLogs.some((log) => log.action === '验收通过')) {
+    processLogs.push({ time: '今天 10:28', owner: '张晓', action: '验收通过', detail: '已核对处理结果和凭证', tone: 'green' });
+  }
   const normalizedTask = {
     ...task,
     owner,
     status,
-    processLogs: (task.processLogs || []).map((log) => (
-      log.action === '等待分派'
-        ? { ...log, owner, action: '接收任务', detail: `负责人 ${owner} 已进入处理队列`, tone: 'green' }
-        : log
-    )),
+    ...(completionEvidence ? { completionEvidence } : {}),
+    ...(acceptance ? { acceptance } : {}),
+    processLogs,
   };
   return {
     ...normalizedTask,
@@ -916,10 +988,10 @@ export const dashboardMetricHistory = {
 };
 
 export const inventoryMetricStats = [
-  { label: '7天内缺货', value: 128, currentValue: 128, change: '+17', changeValue: 17, valueFormat: 'integer', trend: [96, 101, 108, 99, 113, 106, 102, 115, 109, 103, 110, 122, 114, 107, 116, 120, 111, 128] },
-  { label: '14天内缺货', value: 243, currentValue: 243, change: '+32', changeValue: 32, valueFormat: 'integer', trend: [198, 205, 214, 201, 220, 212, 204, 196, 210, 206, 199, 218, 231, 217, 209, 225, 211, 243] },
-  { label: '库存滞销', value: 23, currentValue: 23, change: '-12', changeValue: -12, valueFormat: 'integer', trend: [42, 44, 39, 46, 41, 38, 43, 40, 36, 42, 48, 45, 39, 37, 41, 38, 35, 23] },
-  { label: '建议调拨', value: 98, currentValue: 98, change: '+9', changeValue: 9, valueFormat: 'integer', trend: [72, 75, 79, 73, 82, 78, 74, 70, 76, 73, 79, 85, 91, 84, 80, 87, 89, 98] },
+  { key: 'stockout0To7', label: '7天内缺货SKU', value: 36, currentValue: 36, change: '+3', changeValue: 3, valueFormat: 'integer', trend: [29, 31, 30, 32, 34, 33, 36] },
+  { key: 'stockout8To14', label: '8–14天缺货SKU', value: 43, currentValue: 43, change: '-2', changeValue: -2, valueFormat: 'integer', trend: [48, 47, 46, 45, 46, 45, 43] },
+  { key: 'slowMoving', label: '库存滞销SKU', value: 26, currentValue: 26, change: '-2', changeValue: -2, valueFormat: 'integer', trend: [33, 32, 30, 29, 28, 28, 26] },
+  { key: 'transfer', label: '建议调拨SKU', value: 25, currentValue: 25, change: '+2', changeValue: 2, valueFormat: 'integer', trend: [19, 20, 21, 22, 21, 23, 25] },
 ];
 
 export const dashboardSuggestions = [
@@ -1064,7 +1136,7 @@ export const systemMessages = [
   },
   {
     id: 'msg-004',
-    content: '任务待确认#20260601001已完成待确认',
+    content: '任务#20260601001已提交待验收',
     detail: '负责人已提交处理凭证，请运营主管复核结果并确认是否关闭任务。',
     category: '任务',
     time: '1小时前',

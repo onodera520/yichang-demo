@@ -24,9 +24,9 @@ const baseState = {
 };
 
 test('maps only supported statuses to explicit return actions', () => {
-  assert.deepEqual(getTaskReturnAction({ ...baseTask, status: '待确认' }), {
+  assert.deepEqual(getTaskReturnAction({ ...baseTask, status: '待验收' }), {
     type: 'return',
-    label: '退回',
+    label: '退回处理',
     action: '退回任务',
     targetStatus: '处理中',
   });
@@ -73,7 +73,7 @@ test('accepts only a reason from the current action and validates an optional re
 });
 
 test('returns review and upgraded tasks to processing without changing owner or prior logs', () => {
-  for (const status of ['待确认', '已升级']) {
+  for (const status of ['待验收', '已升级']) {
     const task = { ...baseTask, status };
     const state = { ...baseState, tasks: [task] };
     const result = returnTaskState(state, task.id, {
@@ -107,14 +107,14 @@ test('rejects invalid reasons and unsupported current statuses without changing 
   const task = { ...baseTask, status: '处理中' };
   const state = { ...baseState, tasks: [task] };
   const unsupported = returnTaskState(state, task.id, { reason: '处理信息不完整' });
-  const emptyReason = returnTaskState({ ...baseState, tasks: [{ ...task, status: '待确认' }] }, task.id, { reason: ' ' });
+  const emptyReason = returnTaskState({ ...baseState, tasks: [{ ...task, status: '待验收' }] }, task.id, { reason: ' ' });
   const crossActionReason = returnTaskState(
-    { ...baseState, tasks: [{ ...task, status: '待确认' }] },
+    { ...baseState, tasks: [{ ...task, status: '待验收' }] },
     task.id,
     { reason: '负责人分配错误' },
   );
   const longRemark = returnTaskState(
-    { ...baseState, tasks: [{ ...task, status: '待确认' }] },
+    { ...baseState, tasks: [{ ...task, status: '待验收' }] },
     task.id,
     { reason: '处理信息不完整', remark: 'a'.repeat(101) },
   );
@@ -139,6 +139,7 @@ test('reopens a completed order, restores SLA, clears evidence and rolls source 
     remainingSLA: '-',
     previousRemainingSLA: '01:42:31',
     completionEvidence: { result: '已完成仓库切换', resolvedSource: true },
+    acceptance: { reviewer: '张晓', reviewedAt: '今天 11:00' },
   };
   assert.deepEqual(getTaskReturnAction(task), {
     type: 'reopen',
@@ -153,6 +154,7 @@ test('reopens a completed order, restores SLA, clears evidence and rolls source 
   assert.equal(result.task.status, '处理中');
   assert.equal(result.task.remainingSLA, '01:42:31');
   assert.equal('completionEvidence' in result.task, false);
+  assert.equal('acceptance' in result.task, false);
   assert.equal('previousRemainingSLA' in result.task, false);
   assert.equal(result.state.orders[0].status, '处理中');
   assert.equal(result.task.processLogs.at(-1).action, '重新打开任务');

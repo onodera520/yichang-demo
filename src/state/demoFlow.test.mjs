@@ -51,6 +51,17 @@ const completionEvidence = {
   referenceNo: 'NJ-OUT-260601-032',
 };
 
+const directCompletionState = {
+  orders: [{ ...order, status: '处理中' }],
+  inventory: [{ ...sku, status: '待补货' }],
+  tasks: [{ ...orderTask, status: '处理中' }],
+};
+assert.equal(
+  completeTaskState(directCompletionState, orderTask.id),
+  directCompletionState,
+  '没有员工提交结果时不能直接完成任务',
+);
+
 const completedOrderState = completeTaskState(
   {
     orders: [{ ...order, status: '处理中' }],
@@ -60,12 +71,12 @@ const completedOrderState = completeTaskState(
   orderTask.id,
   completionEvidence,
 );
-assert.equal(completedOrderState.tasks[0].status, '已完成');
-assert.equal(completedOrderState.tasks[0].previousRemainingSLA, '01:42:31');
-assert.equal(completedOrderState.tasks[0].remainingSLA, '-');
+assert.equal(completedOrderState.tasks[0].status, '待验收');
+assert.equal(completedOrderState.tasks[0].previousRemainingSLA, undefined);
+assert.equal(completedOrderState.tasks[0].remainingSLA, '01:42:31');
 assert.deepEqual(completedOrderState.tasks[0].completionEvidence, completionEvidence);
 assert.match(completedOrderState.tasks[0].processLogs.at(-1).detail, /NJ-OUT-260601-032/);
-assert.equal(completedOrderState.orders[0].status, '已完成');
+assert.equal(completedOrderState.orders[0].status, '处理中');
 assert.equal(completedOrderState.inventory[0].status, '待补货');
 
 const completedInventoryState = completeTaskState(
@@ -77,8 +88,8 @@ const completedInventoryState = completeTaskState(
   inventoryTask.id,
   completionEvidence,
 );
-assert.equal(completedInventoryState.tasks[0].status, '已完成');
-assert.equal(completedInventoryState.inventory[0].status, '已完成');
+assert.equal(completedInventoryState.tasks[0].status, '待验收');
+assert.equal(completedInventoryState.inventory[0].status, '待补货');
 assert.equal(completedInventoryState.orders[0].status, '处理中');
 
 const unresolvedOrderState = completeTaskState(

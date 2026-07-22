@@ -27,14 +27,14 @@ export function getTaskDetailActionPolicy(task) {
     };
   }
 
-  if (task?.status === '待确认') {
+  if (task?.status === '待验收') {
     return {
       canChangeOwner: false,
       canTransfer: false,
       transferLabel: '转交',
       canUpgrade: false,
-      primaryAction: 'confirm',
-      primaryLabel: '确认完成',
+      primaryAction: 'accept',
+      primaryLabel: '验收通过',
       primaryDisabled: false,
     };
   }

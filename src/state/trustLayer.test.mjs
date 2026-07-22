@@ -117,14 +117,15 @@ const completionPatch = buildCompletionPatch(
   completionEvidence,
 );
 
-assert.equal(completionPatch.status, '已完成');
-assert.equal(completionPatch.remainingSLA, '-');
-assert.equal(completionPatch.previousRemainingSLA, '03:15:00');
+assert.equal(completionPatch.status, '待验收');
+assert.equal(completionPatch.remainingSLA, '03:15:00');
+assert.equal(completionPatch.previousRemainingSLA, undefined);
 assert.deepEqual(completionPatch.completionEvidence, completionEvidence);
 assert.equal(completionPatch.processLogs.length, 2);
 assert.match(completionPatch.processLogs[1].detail, /NJ-OUT-260601-032/);
 
-assert.equal(getCompletionTargetStatus({ resolvedSource: true }), '已完成');
+assert.equal(completionPatch.processLogs.at(-1).action, '提交验收');
+assert.equal(getCompletionTargetStatus({ resolvedSource: true }), '待验收');
 assert.equal(getCompletionTargetStatus({ resolvedSource: false }), '处理中');
 assert.equal(
   getCompletionTargetStatus({ resolvedSource: false, targetStatus: '已升级' }),

@@ -34,8 +34,8 @@ export default function Sidebar({ collapsed, onToggle }) {
       style={{ width: layout.sidebarWidth }}
     >
       <div
-        className={`flex h-[72px] shrink-0 items-center transition-[padding] duration-[260ms] ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none ${
-          collapsed ? 'justify-center px-0' : 'px-5'
+        className={`flex h-[72px] shrink-0 items-center justify-start transition-[padding] duration-[260ms] ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none ${
+          collapsed ? 'pl-[18px] pr-0' : 'px-5'
         }`}
       >
         <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[12px] bg-[#2F7BFF] text-white shadow-[0_10px_20px_rgba(47,123,255,0.22)]">
@@ -67,8 +67,8 @@ export default function Sidebar({ collapsed, onToggle }) {
             to={item.path}
             className={({ isActive }) =>
               [
-                'flex h-11 items-center overflow-hidden rounded-[8px] text-[15px] font-semibold transition-[padding,background-color,color,box-shadow] duration-200 motion-reduce:transition-none',
-                collapsed ? 'justify-center px-0' : 'px-4',
+                'flex h-11 items-center justify-start overflow-hidden rounded-[8px] text-[15px] font-semibold transition-[padding,background-color,color,box-shadow] duration-200 motion-reduce:transition-none',
+                collapsed ? 'pl-[18px] pr-0' : 'px-4',
                 isActive
                   ? 'bg-[#2F7BFF] text-white shadow-[0_10px_20px_rgba(47,123,255,0.23)]'
                   : 'text-[#8A98B3] hover:bg-[#F3F7FD] hover:text-[#5F6B7A]',

@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import DetailDrawer from '../components/common/DetailDrawer.jsx';
 import AiEvidencePanel from '../components/common/AiEvidencePanel.jsx';
+import AssigneeWorkloadSelect from '../components/common/AssigneeWorkloadSelect.jsx';
 import ConfirmActionDialog from '../components/common/ConfirmActionDialog.jsx';
 import DataFreshnessNotice from '../components/common/DataFreshnessNotice.jsx';
 import FilterSelect from '../components/common/FilterSelect.jsx';
@@ -32,6 +33,7 @@ import productPetFeederImage from '../assets/products/pet-feed-02.png';
 import { useToast } from '../components/common/Toast.jsx';
 import { useRefreshTime } from '../hooks/useRefreshTime.js';
 import { useSlaClock } from '../hooks/useSlaClock.js';
+import { taskTeamMembers } from '../data/mockData.js';
 import { useDemoState } from '../state/DemoStateContext.jsx';
 import { useTopbarFilter } from '../state/TopbarFilterContext.jsx';
 import { sortOrdersByPurchaseTimeDesc } from '../utils/orderSorting.js';
@@ -57,8 +59,6 @@ import {
 } from './orders/dashboardPreset.js';
 
 const tabs = ['全部', '地址异常', '缺货', '物流延误', '平台同步失败', '支付异常', '退款', '清关异常'];
-const assignees = ['王敏', '赵宁', '陈浩', '刘畅', '周扬', '张磊', '李娜'];
-
 const filterDefaults = {
   platform: '',
   store: '',
@@ -100,12 +100,12 @@ const skuProductNames = {
 const ORDER_PAGE_SIZE = 15;
 const orderColumnDefinitions = [
   { key: 'riskLevel', label: '风险等级', width: 92 },
-  { key: 'abnormalType', label: '异常类型', width: 126 },
-  { key: 'orderNo', label: '订单号', width: 220 },
-  { key: 'store', label: '店铺', width: 112 },
+  { key: 'abnormalType', label: '异常类型', width: 184 },
+  { key: 'orderNo', label: '订单号', width: 190 },
+  { key: 'store', label: '店铺', width: 104 },
   { key: 'platform', label: '平台', width: 76 },
-  { key: 'country', label: '国家/地区', width: 104 },
-  { key: 'amount', label: '异常金额', width: 106 },
+  { key: 'country', label: '国家/地区', width: 96 },
+  { key: 'amount', label: '异常金额', width: 94 },
   { key: 'remainingSLA', label: '剩余SLA', width: 106 },
   { key: 'owner', label: '负责人', width: 92 },
   { key: 'status', label: '状态', width: 84 },
@@ -311,6 +311,7 @@ export default function Orders() {
           [
             row.orderNo,
             row.relatedSku,
+            row.abnormalDetail,
             row.abnormalType,
             row.store,
             row.platform,
@@ -706,6 +707,7 @@ export default function Orders() {
         onRejectSuggestion={handleRejectSuggestion}
         order={drawerOrder}
         taskBlockReason={drawerTaskBlockReason}
+        tasks={tasks}
         connection={drawerConnection}
         slaClock={slaClock}
       />
@@ -748,7 +750,10 @@ function OrderFilter({ label, value, options, onChange, wide = false }) {
 function OrderTableCell({ columnKey, compact, onOpen, row, slaClock }) {
   const style = compact ? { height: 48 } : undefined;
   if (columnKey === 'riskLevel') return <td style={style}><RiskExplanationPopover level={row.riskLevel} explanation={row.riskExplanation} /></td>;
-  if (columnKey === 'abnormalType') return <td className="truncate" style={style}>{row.abnormalType}</td>;
+  if (columnKey === 'abnormalType') {
+    const abnormalDetail = row.abnormalDetail ?? row.abnormalType;
+    return <td className="truncate" style={style} title={abnormalDetail}>{abnormalDetail}</td>;
+  }
   if (columnKey === 'orderNo') {
     return (
       <td className="truncate" style={style}>
@@ -806,6 +811,7 @@ function OrderDetailDrawer({
   onRejectSuggestion,
   order,
   taskBlockReason,
+  tasks,
   connection,
   slaClock,
 }) {
@@ -882,7 +888,8 @@ function OrderDetailDrawer({
               </span>
             }
           >
-            <InfoRow label="异常类型" value={order.abnormalType} strong />
+            <InfoRow label="异常大类" value={order.abnormalType} strong />
+            <InfoRow label="具体异常" value={order.abnormalDetail ?? order.abnormalType} strong />
             <InfoRow label="异常原因" value={detail.reason} strong />
             <InfoRow label="影响金额" value={formatCurrency(order.amount)} strong />
             <InfoRow label="当前状态" value={<StatusPill status={order.status} />} />
@@ -894,15 +901,16 @@ function OrderDetailDrawer({
                     <UserRound className="h-4 w-4" />
                   </span>
                   {order.status !== '待处理' && !['已完成', '已驳回'].includes(order.status) ? (
-                    <select
-                      aria-label="分派负责人"
-                      className="h-7 rounded-[6px] border border-[#D7DEE9] bg-white px-2 text-sm text-[#1D273B] outline-none focus:border-[#2F7BFF]"
-                      onChange={(event) => onAssignOwner(event.target.value)}
+                    <AssigneeWorkloadSelect
+                      ariaLabel="分派负责人"
+                      members={taskTeamMembers}
+                      menuClassName="right-0 w-[292px]"
+                      onChange={onAssignOwner}
+                      source={order}
+                      tasks={tasks}
+                      triggerClassName="h-7 min-w-[108px] rounded-[6px] px-2 text-sm"
                       value={order.owner}
-                    >
-                      <option value="未分派">未分派</option>
-                      {assignees.map((owner) => <option key={owner} value={owner}>{owner}</option>)}
-                    </select>
+                    />
                   ) : order.owner}
                 </span>
               }

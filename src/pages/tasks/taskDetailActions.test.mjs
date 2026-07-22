@@ -6,7 +6,7 @@ import { canRemindTask, getTaskDetailActionPolicy } from './taskDetailActions.js
 test('批量催办只接受已分派和处理中任务', () => {
   assert.equal(canRemindTask({ status: '已分派' }), true);
   assert.equal(canRemindTask({ status: '处理中' }), true);
-  assert.equal(canRemindTask({ status: '待确认' }), false);
+  assert.equal(canRemindTask({ status: '待验收' }), false);
   assert.equal(canRemindTask({ status: '已升级' }), false);
   assert.equal(canRemindTask({ status: '已完成' }), false);
 });
@@ -23,14 +23,14 @@ test('处理中任务由主管催办，不允许直接完成', () => {
   });
 });
 
-test('待确认任务锁定负责人，只允许退回或确认完成', () => {
-  assert.deepEqual(getTaskDetailActionPolicy({ status: '待确认' }), {
+test('待验收任务锁定负责人，只允许退回或验收通过', () => {
+  assert.deepEqual(getTaskDetailActionPolicy({ status: '待验收' }), {
     canChangeOwner: false,
     canTransfer: false,
     transferLabel: '转交',
     canUpgrade: false,
-    primaryAction: 'confirm',
-    primaryLabel: '确认完成',
+    primaryAction: 'accept',
+    primaryLabel: '验收通过',
     primaryDisabled: false,
   });
 });

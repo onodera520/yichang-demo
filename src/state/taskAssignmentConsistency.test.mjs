@@ -15,7 +15,13 @@ assert.deepEqual(
 assert.equal(
   tasks.some((task) => task.status === '待处理'),
   false,
-  '任务状态统一使用“待确认”，不再混用“待处理”',
+  '任务状态统一使用“待验收”，不再混用“待处理”',
+);
+
+assert.equal(
+  tasks.some((task) => task.status === '待确认'),
+  false,
+  '任务状态不再使用含义模糊的“待确认”',
 );
 
 assert.equal(

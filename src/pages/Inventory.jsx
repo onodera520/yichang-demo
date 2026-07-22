@@ -19,6 +19,7 @@ import {
 } from 'recharts';
 import DetailDrawer from '../components/common/DetailDrawer.jsx';
 import AiEvidencePanel from '../components/common/AiEvidencePanel.jsx';
+import AssigneeWorkloadSelect from '../components/common/AssigneeWorkloadSelect.jsx';
 import ConfirmActionDialog from '../components/common/ConfirmActionDialog.jsx';
 import DataFreshnessNotice from '../components/common/DataFreshnessNotice.jsx';
 import FilterSelect from '../components/common/FilterSelect.jsx';
@@ -30,7 +31,7 @@ import LiveUpdateTime from '../components/LiveUpdateTime.jsx';
 import { useToast } from '../components/common/Toast.jsx';
 import { buildRollingDateLabels } from '../data/demoTime.js';
 import { useRefreshTime } from '../hooks/useRefreshTime.js';
-import { inventoryMetricStats } from '../data/mockData.js';
+import { inventoryMetricStats, taskTeamMembers } from '../data/mockData.js';
 import stockout7Icon from '../assets/inventory-icons/stockout-7days.png';
 import stockout14Icon from '../assets/inventory-icons/stockout-14days.png';
 import slowMovingIcon from '../assets/inventory-icons/slow-moving.png';
@@ -52,36 +53,29 @@ import { formatMetricValue } from '../utils/formatMetricValue.js';
 import { buildInventoryCsv } from './inventory/inventoryExport.js';
 import {
   applyInventoryDashboardPreset,
+  buildInventoryMetricStats,
   getInventoryDashboardPresetMeta,
+  matchesInventoryAvailableDays,
 } from './inventory/dashboardPreset.js';
 
 const metricCardVisuals = [
   {
-    tone: '#FF3B3B',
     icon: stockout7Icon,
     filter: { availableDays: '7' },
   },
   {
-    tone: '#FF3B3B',
     icon: stockout14Icon,
-    filter: { availableDays: '14' },
+    filter: { availableDays: '8-14' },
   },
   {
-    tone: '#20C997',
     icon: slowMovingIcon,
     filter: { riskLevel: '滞销' },
   },
   {
-    tone: '#FF3B3B',
     icon: transferIcon,
     filter: { riskLevel: '调拨' },
   },
 ];
-
-const metricCards = inventoryMetricStats.map((metric, index) => ({
-  ...metric,
-  ...metricCardVisuals[index],
-}));
 
 const riskStyles = {
   高: 'bg-[#FFEDEE] text-[#F04438]',
@@ -90,8 +84,6 @@ const riskStyles = {
   滞销: 'bg-[#F2EAFE] text-[#8B5CF6]',
   调拨: 'bg-[#EAF2FF] text-[#2F7BFF]',
 };
-const assignees = ['王敏', '赵宁', '陈浩', '刘畅', '周扬', '张磊', '李娜'];
-
 const productNameOverrides = {
   'ELE-HEAD-01': '头戴式无线降噪耳机Pro',
   'ELE-KYB-01': '有线机械键盘 黑轴',
@@ -257,6 +249,18 @@ export default function Inventory() {
   const [currentPage, setCurrentPage] = useState(1);
   const [pendingAction, setPendingAction] = useState(null);
 
+  const metricRows = useMemo(
+    () => inventory.filter((item) => !topbarPlatform || item.platform === topbarPlatform),
+    [inventory, topbarPlatform],
+  );
+  const metricCards = useMemo(
+    () => buildInventoryMetricStats(metricRows, inventoryMetricStats).map((metric, index) => ({
+      ...metric,
+      ...metricCardVisuals[index],
+    })),
+    [metricRows],
+  );
+
   useEffect(() => {
     const presetKey = location.state?.dashboardPreset;
     const preset = getInventoryDashboardPresetMeta(presetKey);
@@ -303,10 +307,7 @@ export default function Inventory() {
       if (filters.platform && item.platform !== filters.platform) return false;
       if (filters.warehouse && item.warehouse !== filters.warehouse) return false;
       if (filters.riskLevel && item.riskLevel !== filters.riskLevel) return false;
-      if (filters.availableDays === '7' && item.availableDays > 7) return false;
-      if (filters.availableDays === '14' && item.availableDays > 14) return false;
-      if (filters.availableDays === '30' && item.availableDays > 30) return false;
-      if (filters.availableDays === 'slow' && item.availableDays < 90) return false;
+      if (filters.availableDays && !matchesInventoryAvailableDays(item, filters.availableDays)) return false;
       if (
         !matchesKeyword(
           [
@@ -345,7 +346,11 @@ export default function Inventory() {
 
   const updateFilter = (key, value) => setFilters((current) => ({ ...current, [key]: value }));
   const resetFilters = () => setFilters({ platform: '', warehouse: '', riskLevel: '', availableDays: '' });
-  const applyMetricFilter = (filter) => setFilters((current) => ({ ...current, ...filter }));
+  const applyMetricFilter = (filter) => {
+    setDashboardPreset('');
+    setFilters({ platform: '', warehouse: '', riskLevel: '', availableDays: '', ...filter });
+    setCurrentPage(1);
+  };
   const exportInventory = () => {
     if (!sortedRows.length) {
       showToast({ message: '当前没有可导出的库存数据', type: 'info' });
@@ -469,7 +474,7 @@ export default function Inventory() {
               value={filters.availableDays}
               options={[
                 { label: '7天内', value: '7' },
-                { label: '14天内', value: '14' },
+                { label: '8–14天', value: '8-14' },
                 { label: '30天内', value: '30' },
                 { label: '90天以上', value: 'slow' },
               ]}
@@ -499,7 +504,7 @@ export default function Inventory() {
         <section className="min-h-0 flex-1 overflow-hidden rounded-[14px] border border-[#E6EAF2] bg-white shadow-[var(--shadow-card)]">
           <div className="flex h-[62px] items-center px-5">
             <h2 className="text-[20px] font-semibold text-[#111827]">
-              SKU风险列表 <span className="ml-1 text-base font-normal text-[#8A98B3]">（共{sortedRows.length}条）</span>
+              SKU风险列表 <span className="ml-1 text-base font-normal text-[#8A98B3]">（共{sortedRows.length}个SKU）</span>
             </h2>
           </div>
 
@@ -617,7 +622,7 @@ export default function Inventory() {
           </div>
 
           <div className="flex h-[60px] items-center justify-end gap-5 border-t border-[#E8EDF5] px-5 text-sm text-[#6B778C]">
-            <span>共 {sortedRows.length} 条</span>
+            <span>共 {sortedRows.length} 个SKU</span>
             <button
               className="text-[#8A98B3] disabled:cursor-not-allowed disabled:opacity-40"
               disabled={safePage <= 1}
@@ -719,6 +724,7 @@ export default function Inventory() {
               setAdjustReason={setAdjustReason}
               setAdjustNote={setAdjustNote}
               onAssignOwner={handleAssignInventoryOwner}
+              tasks={tasks}
             />
           </div>
         ) : null}
@@ -749,6 +755,7 @@ function SkuDetailDrawerContent({
   setAdjustReason,
   setAdjustNote,
   onAssignOwner,
+  tasks,
 }) {
   const detail = selectedSku.detail ?? {};
   const productName = detail.displayName ?? productNameOverrides[selectedSku.sku] ?? selectedSku.productName;
@@ -875,16 +882,17 @@ function SkuDetailDrawerContent({
           </label>
           <label className="block">
             <span className="text-xs text-[#7889A8]">负责人</span>
-            <select
-              aria-label="分派库存负责人"
-              className="mt-1 h-9 w-full rounded-[8px] border border-[#D9E1EE] bg-white px-3 text-sm text-[#1D273B] outline-none focus:border-[#2F7BFF] disabled:bg-[#F5F7FB] disabled:text-[#8A98B3]"
+            <AssigneeWorkloadSelect
+              ariaLabel="分派库存负责人"
+              className="mt-1"
               disabled={selectedSku.status === '待处理'}
-              onChange={(event) => onAssignOwner(event.target.value)}
+              members={taskTeamMembers}
+              onChange={onAssignOwner}
+              source={selectedSku}
+              tasks={tasks}
+              triggerClassName="h-9 w-full rounded-[8px] px-3 text-sm"
               value={selectedSku.owner}
-            >
-              <option value="未分派">未分派</option>
-              {assignees.map((owner) => <option key={owner} value={owner}>{owner}</option>)}
-            </select>
+            />
           </label>
           <label className="block">
             <span className="text-xs text-[#7889A8]">备注</span>

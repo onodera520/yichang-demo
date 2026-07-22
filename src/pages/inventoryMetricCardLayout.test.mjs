@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
 const source = readFileSync(new URL('./Inventory.jsx', import.meta.url), 'utf8');
+const mockDataSource = readFileSync(new URL('../data/mockData.js', import.meta.url), 'utf8');
 
 assert.match(
   source,
@@ -34,3 +35,18 @@ assert.match(
 );
 
 assert.doesNotMatch(source, /preserveAspectRatio="none"/, 'inventory cards should not stretch endpoint circles');
+
+assert.match(
+  source,
+  /buildInventoryMetricStats\(metricRows, inventoryMetricStats\)/,
+  'inventory metric cards should use live rows instead of hard-coded totals',
+);
+
+assert.match(mockDataSource, /label: '7天内缺货SKU'/, 'the first metric should retain the 7-day wording');
+assert.match(mockDataSource, /label: '8–14天缺货SKU'/, 'the second metric should use a mutually exclusive range');
+assert.match(source, /label: '30天内', value: '30'/, 'the general 30-day filter should remain available');
+assert.match(
+  source,
+  /matchesInventoryAvailableDays\(item, filters\.availableDays\)/,
+  'the table should share the same available-days matcher as metric cards',
+);

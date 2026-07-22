@@ -13,7 +13,7 @@ const connections = [
 ];
 
 const orders = [
-  { id: 'a', orderNo: 'AMZ-1', platform: 'Amazon', owner: '未分派', status: '待分派', amount: 100, riskLevel: '高', confidence: 0.92, relatedSku: 'SKU-A' },
+  { id: 'a', orderNo: 'AMZ-1', platform: 'Amazon', owner: '未分派', status: '待分派', amount: 100, riskLevel: '高', abnormalType: '地址异常', abnormalDetail: '邮编与城市不匹配', confidence: 0.92, relatedSku: 'SKU-A' },
   { id: 'b', orderNo: 'EBY-1', platform: 'eBay', owner: '王敏', status: '待处理', amount: 80, riskLevel: '中', confidence: 0.81, relatedSku: 'SKU-B' },
   { id: 'c', orderNo: 'AMZ-2', platform: 'Amazon', owner: '赵宁', status: '已完成', amount: 60, riskLevel: '低', confidence: 0.66, relatedSku: 'SKU-C' },
 ];
@@ -72,6 +72,8 @@ assert.match(csv, /置信度建议说明/);
 assert.match(csv, /高可信，可优先参考/);
 assert.match(csv, /中等可信，建议核验关键数据/);
 assert.match(csv, /低可信，需人工复核/);
+assert.match(csv, /异常大类,具体异常/);
+assert.match(csv, /地址异常,邮编与城市不匹配/);
 assert.equal(confidenceAdvice(0.9), '高可信，可优先参考');
 assert.equal(confidenceAdvice(0.7), '中等可信，建议核验关键数据');
 assert.equal(confidenceAdvice(0.69), '低可信，需人工复核');

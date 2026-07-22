@@ -20,7 +20,7 @@ for (const [title, sourceType, expectedFirstLabel] of cases) {
   assert.equal(templates.length, 3, `${title} should provide exactly three templates`);
   assert.equal(templates[0].label, expectedFirstLabel, `${title} should use the expected template category`);
   assert.equal(templates[0].resolvedSource, true, `${title} success template should resolve the source`);
-  assert.equal(templates[0].targetStatus, '已完成', `${title} success template should complete the task`);
+  assert.equal(templates[0].targetStatus, '待验收', `${title} success template should submit the task for acceptance`);
   assert.equal(
     templates.every((template) => template.description.includes('SOURCE-001')),
     true,
@@ -65,7 +65,7 @@ assert.equal(warehouseTemplates[1].resolvedSource, false);
 assert.equal(warehouseTemplates[2].resolvedSource, false);
 assert.deepEqual(
   warehouseTemplates.map((template) => template.targetStatus),
-  ['已完成', '处理中', '已升级'],
+  ['待验收', '处理中', '已升级'],
   'blocked warehouse switching must upgrade instead of completing',
 );
 
@@ -122,6 +122,10 @@ assert.deepEqual(completionTemplateApi.getCompletionDialogCopy('处理中'), {
 assert.deepEqual(completionTemplateApi.getCompletionDialogCopy('已完成'), {
   title: '完成任务',
   submitLabel: '提交完成',
+});
+assert.deepEqual(completionTemplateApi.getCompletionDialogCopy('待验收'), {
+  title: '提交处理结果',
+  submitLabel: '提交验收',
 });
 
 console.log('completion template tests passed');

@@ -219,13 +219,13 @@ export function confidenceAdvice(confidence) {
 
 export function buildOrdersCsv(orders) {
   const columns = [
-    ['订单号', 'orderNo'], ['风险等级', 'riskLevel'], ['异常类型', 'abnormalType'], ['店铺', 'store'],
+    ['订单号', 'orderNo'], ['风险等级', 'riskLevel'], ['异常大类', 'abnormalType'], ['具体异常', 'abnormalDetail'], ['店铺', 'store'],
     ['平台', 'platform'], ['国家/地区', 'country'], ['异常金额', 'amount'], ['剩余SLA', 'remainingSLA'],
     ['负责人', 'owner'], ['状态', 'status'], ['关联SKU', 'relatedSku'], ['AI建议', 'aiSuggestion'],
   ];
   const header = [...columns.map(([label]) => label), '置信度', '置信度建议说明'];
   const lines = orders.map((order) => [
-    ...columns.map(([, key]) => order[key]),
+    ...columns.map(([, key]) => key === 'abnormalDetail' ? order.abnormalDetail ?? order.abnormalType : order[key]),
     `${Math.round(Number(order.confidence || 0) * 100)}%`,
     confidenceAdvice(order.confidence),
   ].map(csvCell).join(','));

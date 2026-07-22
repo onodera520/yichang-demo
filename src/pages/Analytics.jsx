@@ -28,6 +28,11 @@ import cumulativeAnomaliesIcon from '../assets/analytics-icons/cumulative-anomal
 import processedAnomaliesIcon from '../assets/analytics-icons/processed-anomalies.png';
 import taskTimeoutRateIcon from '../assets/analytics-icons/task-timeout-rate.png';
 import warningAccuracyIcon from '../assets/analytics-icons/warning-accuracy.png';
+import {
+  formatCountUnit,
+  formatDurationUnit,
+  formatEfficiencyTooltipValue,
+} from '../utils/chartUnits.js';
 import { formatMetricValue } from '../utils/formatMetricValue.js';
 
 const metricVisualConfig = [
@@ -254,8 +259,8 @@ function TrendPanel({ range, open, setOpen, setRange }) {
           <LineChart data={data} margin={{ top: 4, right: 8, left: -16, bottom: 0 }}>
             <CartesianGrid stroke="#E8EDF5" vertical={false} />
             <XAxis dataKey="date" ticks={dateTicks} interval={0} padding={{ left: 8, right: 20 }} axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#5F6B7A' }} />
-            <YAxis domain={[0, 1000]} axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#5F6B7A' }} />
-            <Tooltip contentStyle={{ borderRadius: 10, borderColor: '#D7DEE9' }} />
+            <YAxis domain={[0, 1000]} axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#5F6B7A', dx: 8 }} tickFormatter={formatCountUnit} />
+            <Tooltip formatter={(value) => formatCountUnit(value)} contentStyle={{ borderRadius: 10, borderColor: '#D7DEE9' }} />
             {trendLines.map((line) => (
               <Line key={line.key} type="monotone" dataKey={line.key} name={line.name} dot={showDots ? { r: 3, fill: line.color } : false} stroke={line.color} strokeWidth={2.6} activeDot={{ r: 4 }} />
             ))}
@@ -363,9 +368,9 @@ function EfficiencyPanel({ range, open, setOpen, setRange }) {
             </defs>
             <CartesianGrid stroke="#E8EDF5" vertical={false} />
             <XAxis dataKey="date" ticks={dateTicks} interval={0} axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#5F6B7A' }} />
-            <YAxis yAxisId="left" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#5F6B7A' }} />
-            <YAxis yAxisId="right" orientation="right" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#5F6B7A' }} />
-            <Tooltip contentStyle={{ borderRadius: 10, borderColor: '#D7DEE9' }} />
+            <YAxis yAxisId="left" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#5F6B7A' }} tickFormatter={formatDurationUnit} />
+            <YAxis yAxisId="right" orientation="right" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#5F6B7A' }} tickFormatter={formatCountUnit} />
+            <Tooltip formatter={(value, name) => formatEfficiencyTooltipValue(value, name)} contentStyle={{ borderRadius: 10, borderColor: '#D7DEE9' }} />
             <Bar yAxisId="left" dataKey="averageMinutes" name="处理时长" barSize={48} fill="url(#barFill)" radius={[2, 2, 0, 0]} />
             <Line yAxisId="right" type="monotone" dataKey="processedCount" name="处理量" stroke="#18C5A5" strokeWidth={2.6} dot={{ r: 3, fill: '#fff', stroke: '#18C5A5', strokeWidth: 2 }} activeDot={{ r: 5 }} />
           </ComposedChart>

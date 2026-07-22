@@ -83,10 +83,10 @@ export function validateCompletionEvidence(evidence) {
   return errors;
 }
 
-const ACTIVE_COMPLETION_TARGETS = new Set(['处理中', '待确认', '已升级']);
+const ACTIVE_COMPLETION_TARGETS = new Set(['处理中', '待验收', '已升级']);
 
 export function getCompletionTargetStatus(evidence) {
-  if (evidence?.resolvedSource === true) return '已完成';
+  if (evidence?.resolvedSource === true) return '待验收';
   if (evidence?.resolvedSource === false && ACTIVE_COMPLETION_TARGETS.has(evidence.targetStatus)) {
     return evidence.targetStatus;
   }
@@ -99,8 +99,8 @@ export function buildCompletionPatch(task, evidence) {
   const referenceText = evidence.referenceNo ? `，关联单号 ${evidence.referenceNo}` : '';
   const logPresentation = targetStatus === '已升级'
     ? { action: '升级主管', tone: 'red' }
-    : targetStatus === '待确认'
-      ? { action: '提交待确认', tone: 'orange' }
+    : targetStatus === '待验收'
+      ? { action: '提交验收', tone: 'orange' }
       : completed
         ? { action: '完成任务', tone: 'green' }
         : { action: '更新处理进度', tone: 'blue' };

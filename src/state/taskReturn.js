@@ -1,9 +1,9 @@
 import { hasAssignedTaskOwner } from './taskAssignment.js';
 
 const RETURN_ACTIONS = {
-  待确认: {
+  待验收: {
     type: 'return',
-    label: '退回',
+    label: '退回处理',
     action: '退回任务',
     targetStatus: '处理中',
   },
@@ -142,6 +142,7 @@ export function reopenTaskState(state, taskId, { reason, remark } = {}) {
   const normalizedReason = String(reason).trim();
   const normalizedRemark = String(remark ?? '').trim();
   const {
+    acceptance,
     completionEvidence,
     previousRemainingSLA,
     ...taskWithoutCompletion

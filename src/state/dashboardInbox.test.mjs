@@ -21,7 +21,7 @@ const tasks = [
   },
   {
     id: 'pending-confirmation',
-    status: '待确认',
+    status: '待验收',
     remainingSLA: '05:00:00',
     deadline: '明天 10:00',
   },

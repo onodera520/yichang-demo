@@ -81,10 +81,10 @@ test('unchanged tasks do not create notices and removed tasks clear stale notice
   const pending = reconcileTaskTabNotices(
     createTaskTabNotices(),
     [],
-    [task('task-2', '待确认')],
+    [task('task-2', '待验收')],
   );
-  const removed = reconcileTaskTabNotices(pending, [task('task-2', '待确认')], []);
-  assert.deepEqual(removed['待确认'], []);
+  const removed = reconcileTaskTabNotices(pending, [task('task-2', '待验收')], []);
+  assert.deepEqual(removed['待验收'], []);
 });
 
 test('clearing one tab preserves notices in other tabs', () => {

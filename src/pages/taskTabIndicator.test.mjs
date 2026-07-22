@@ -24,6 +24,6 @@ test('task tabs use one centered animated indicator', () => {
 test('task tabs label active work clearly and place completed tasks last', () => {
   assert.match(
     source,
-    /const tabs = \['全部待办', '已分派', '处理中', '待确认', '已超时', '已升级', '已完成'\]/,
+    /const tabs = \['全部待办', '已分派', '处理中', '待验收', '已超时', '已升级', '已完成'\]/,
   );
 });

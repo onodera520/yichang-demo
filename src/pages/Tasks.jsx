@@ -5,6 +5,7 @@ import {
   ArrowRight,
   CalendarDays,
   Check,
+  CheckCircle2,
   ChevronRight,
   Clock3,
   Download,
@@ -21,7 +22,7 @@ import FilterSelect from '../components/common/FilterSelect.jsx';
 import ConfirmActionDialog from '../components/common/ConfirmActionDialog.jsx';
 import PageHeaderActionButton from '../components/common/PageHeaderActionButton.jsx';
 import RiskTag from '../components/common/RiskTag.jsx';
-import TaskCompletionModal from '../components/common/TaskCompletionModal.jsx';
+import TaskAcceptanceDialog from '../components/common/TaskAcceptanceDialog.jsx';
 import TaskCreateModal from '../components/common/TaskCreateModal.jsx';
 import TaskReturnDialog from '../components/common/TaskReturnDialog.jsx';
 import LiveUpdateTime from '../components/LiveUpdateTime.jsx';
@@ -34,9 +35,9 @@ import { useDemoState } from '../state/DemoStateContext.jsx';
 import { useTopbarFilter } from '../state/TopbarFilterContext.jsx';
 import { getTaskTransitionBlockReason } from '../state/taskAssignment.js';
 import { getTaskReturnAction } from '../state/taskReturn.js';
+import { getTaskAcceptanceBlockReason, getTaskAcceptanceChecks } from '../state/taskAcceptance.js';
 import { formatTaskTabNoticeCount, prioritizeTasksByIds } from '../state/taskTabNotices.js';
 import { getTaskSlaPresentation, isTaskSlaOverdue } from '../state/taskSla.js';
-import { hasTaskSource } from '../state/trustLayer.js';
 import {
   applyTaskRebalancingPlan,
   buildTaskRebalancingPlan,
@@ -64,7 +65,7 @@ import {
 import { matchesTaskTab } from './tasks/taskListVisibility.js';
 import { canRemindTask, getTaskDetailActionPolicy } from './tasks/taskDetailActions.js';
 
-const tabs = ['全部待办', '已分派', '处理中', '待确认', '已超时', '已升级', '已完成'];
+const tabs = ['全部待办', '已分派', '处理中', '待验收', '已超时', '已升级', '已完成'];
 const owners = ['王敏', '赵宁', '陈浩', '刘畅', '周扬', '张磊', '李娜'];
 const sources = ['全部', '来源订单', '库存风险', '物流异常', '平台同步', '售后异常'];
 const risks = ['全部', '高', '中', '低'];
@@ -368,21 +369,30 @@ function TableButton({ children, icon: Icon, className = '', ...buttonProps }) {
   );
 }
 
-function DetailPanel({ task, onComplete, onConfirm, onRemind, onReturn, onUpgrade, onTransfer, slaClock }) {
+function DetailPanel({
+  task,
+  acceptanceBlockReason,
+  acceptanceChecks,
+  onAccept,
+  onRemind,
+  onReturn,
+  onUpgrade,
+  onTransfer,
+  slaClock,
+}) {
   if (!task) return null;
   const returnAction = getTaskReturnAction(task);
   const actionPolicy = getTaskDetailActionPolicy(task);
+  const primaryBlockReason = actionPolicy.primaryAction === 'accept' ? acceptanceBlockReason : '';
   const actionCount = Number(Boolean(actionPolicy.primaryAction))
     + Number(actionPolicy.canTransfer)
     + Number(Boolean(returnAction))
     + Number(actionPolicy.canUpgrade);
   const primaryAction = actionPolicy.primaryAction === 'remind'
     ? onRemind
-    : actionPolicy.primaryAction === 'confirm'
-      ? onConfirm
-      : actionPolicy.primaryAction === 'complete'
-        ? onComplete
-        : undefined;
+    : actionPolicy.primaryAction === 'accept'
+      ? onAccept
+      : undefined;
 
   return (
     <section className="shrink-0 overflow-hidden rounded-[8px] border border-[#E3E9F3] bg-white px-4 py-3.5 shadow-[var(--shadow-card)]">
@@ -425,8 +435,10 @@ function DetailPanel({ task, onComplete, onConfirm, onRemind, onReturn, onUpgrad
       </div>
       {task.completionEvidence ? (
         <div className="border-b border-[#E6EAF2] py-3">
-          <h3 className="mb-2 text-[16px] font-semibold text-[#111827]">{task.status === '已完成' ? '完成凭证' : '处理凭证'}</h3>
+          <h3 className="mb-2 text-[16px] font-semibold text-[#111827]">员工提交结果</h3>
           <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
+            <EvidenceItem label="提交人" value={task.completionEvidence.submittedBy || task.owner} />
+            <EvidenceItem label="提交时间" value={task.completionEvidence.submittedAt || '-'} />
             <EvidenceItem label="处理结果" value={task.completionEvidence.result} wide />
             <EvidenceItem label="执行说明" value={task.completionEvidence.description} wide />
             <EvidenceItem label="原异常" value={task.completionEvidence.resolvedSource ? '已解决' : '未解决'} />
@@ -434,6 +446,33 @@ function DetailPanel({ task, onComplete, onConfirm, onRemind, onReturn, onUpgrad
             <EvidenceItem label="执行数量" value={task.completionEvidence.quantity || '-'} />
             <EvidenceItem label="实际成本" value={task.completionEvidence.cost ? `¥${task.completionEvidence.cost}` : '-'} />
             <EvidenceItem label="附件" value={task.completionEvidence.attachment?.name || '-'} wide />
+          </div>
+        </div>
+      ) : null}
+      {task.status === '待验收' ? (
+        <div className="border-b border-[#E6EAF2] py-3">
+          <h3 className="mb-2 text-[16px] font-semibold text-[#111827]">系统验收检查</h3>
+          <div className="space-y-1.5 text-xs">
+            {acceptanceChecks.map((check) => (
+              <div key={check.key} className="flex items-center gap-2">
+                {check.passed ? (
+                  <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-[#20A162]" />
+                ) : (
+                  <AlertCircle className="h-3.5 w-3.5 shrink-0 text-[#FF1F1F]" />
+                )}
+                <span className={check.passed ? 'text-[#5F6B7A]' : 'text-[#FF1F1F]'}>{check.label}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
+      {task.acceptance ? (
+        <div className="border-b border-[#E6EAF2] py-3">
+          <h3 className="mb-2 text-[16px] font-semibold text-[#111827]">验收记录</h3>
+          <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
+            <EvidenceItem label="验收人" value={task.acceptance.reviewer} />
+            <EvidenceItem label="验收时间" value={task.acceptance.reviewedAt} />
+            <EvidenceItem label="验收备注" value={task.acceptance.note || '已核对处理结果和凭证'} wide />
           </div>
         </div>
       ) : null}
@@ -462,8 +501,9 @@ function DetailPanel({ task, onComplete, onConfirm, onRemind, onReturn, onUpgrad
         {actionPolicy.primaryAction ? (
           <button
             className="h-10 rounded-[6px] bg-[#2F7BFF] text-[13px] font-semibold text-white disabled:cursor-not-allowed disabled:bg-[#AFCBFF]"
-            disabled={actionPolicy.primaryDisabled}
+            disabled={actionPolicy.primaryDisabled || Boolean(primaryBlockReason)}
             onClick={primaryAction}
+            title={primaryBlockReason || undefined}
             type="button"
           >
             {actionPolicy.primaryLabel}
@@ -556,7 +596,7 @@ export default function Tasks() {
   const location = useLocation();
   const { showToast } = useToast();
   const {
-    completeTask,
+    acceptTask,
     createManualTask,
     inventory,
     orders,
@@ -586,7 +626,7 @@ export default function Tasks() {
   const [transferMode, setTransferMode] = useState('single');
   const [transferOwner, setTransferOwner] = useState('王敏');
   const [currentPage, setCurrentPage] = useState(1);
-  const [completionOpen, setCompletionOpen] = useState(false);
+  const [acceptanceOpen, setAcceptanceOpen] = useState(false);
   const [returnDialogOpen, setReturnDialogOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [bulkConfirmAction, setBulkConfirmAction] = useState(null);
@@ -705,6 +745,11 @@ export default function Tasks() {
   const pagedTasks = displayedTasks.slice((safePage - 1) * TASK_PAGE_SIZE, safePage * TASK_PAGE_SIZE);
   const visiblePages = getVisiblePages(safePage, pageCount);
   const selectedTask = filteredTasks.find((task) => task.id === selectedTaskId) ?? filteredTasks[0] ?? null;
+  const selectedAcceptanceChecks = useMemo(
+    () => getTaskAcceptanceChecks(selectedTask, orders, inventory),
+    [inventory, orders, selectedTask],
+  );
+  const selectedAcceptanceBlockReason = getTaskAcceptanceBlockReason(selectedTask, orders, inventory);
   const selectedReturnAction = getTaskReturnAction(selectedTask);
   const selectedTaskRows = allTaskRows.filter((task) => selectedIds.includes(task.id));
   const transferTaskRows = transferMode === 'bulk'
@@ -756,42 +801,6 @@ export default function Tasks() {
     updateTaskState(selectedTask.id, applyPatch);
     showToast({ message: toastMessage, type: patch.status === '已升级' ? 'info' : 'success' });
   };
-  const submitCompletion = (evidence) => {
-    if (!selectedTask) return;
-    const blockReason = getTaskTransitionBlockReason(selectedTask, 'complete');
-    if (blockReason) {
-      showToast({ message: blockReason, type: 'info' });
-      return;
-    }
-    if (selectedTask.sourceKind) {
-      const sourceExists = hasTaskSource(selectedTask, orders, inventory);
-      if (!sourceExists) {
-        showToast({ message: '来源对象未同步，暂时无法完成任务', type: 'error' });
-        return;
-      }
-      const updatedTask = completeTask(selectedTask.id, evidence);
-      setCompletionOpen(false);
-      const feedback = updatedTask?.status === '已完成'
-        ? { message: '任务已完成，对应异常状态已同步', type: 'success' }
-        : updatedTask?.status === '已升级'
-          ? { message: '任务已升级，原异常保持处理中', type: 'info' }
-          : updatedTask?.status === '待确认'
-            ? { message: '处理结果已提交，任务进入待确认', type: 'info' }
-            : { message: '处理结果已提交，任务继续处理中', type: 'info' };
-      showToast(feedback);
-      return;
-    }
-    const updatedTask = completeTask(selectedTask.id, evidence);
-    setCompletionOpen(false);
-    const feedback = updatedTask?.status === '已完成'
-      ? { message: '任务已完成，处理凭证已记录', type: 'success' }
-      : updatedTask?.status === '已升级'
-        ? { message: '任务已升级，处理凭证已记录', type: 'info' }
-        : updatedTask?.status === '待确认'
-          ? { message: '处理结果已提交，任务进入待确认', type: 'info' }
-          : { message: '处理结果已提交，任务继续处理中', type: 'info' };
-    showToast(feedback);
-  };
   const upgradeTask = () => {
     const blockReason = getTaskTransitionBlockReason(selectedTask, 'upgrade');
     if (blockReason) {
@@ -799,14 +808,6 @@ export default function Tasks() {
       return;
     }
     updateTask({ status: '已升级' }, '已升级主管');
-  };
-  const openCompletion = () => {
-    const blockReason = getTaskTransitionBlockReason(selectedTask, 'complete');
-    if (blockReason) {
-      showToast({ message: blockReason, type: 'info' });
-      return;
-    }
-    setCompletionOpen(true);
   };
   const remindTask = () => {
     if (!selectedTask || !['已分派', '处理中', '已超时'].includes(selectedTask.status)) {
@@ -819,17 +820,22 @@ export default function Tasks() {
       type: 'success',
     });
   };
-  const confirmCompletion = () => {
-    if (!selectedTask || selectedTask.status !== '待确认') {
-      showToast({ message: '当前状态无法确认完成', type: 'info' });
+  const openAcceptance = () => {
+    if (selectedAcceptanceBlockReason) {
+      showToast({ message: selectedAcceptanceBlockReason, type: 'info' });
       return;
     }
-    if (selectedTask.sourceKind && !hasTaskSource(selectedTask, orders, inventory)) {
-      showToast({ message: '来源对象未同步，暂时无法确认完成', type: 'error' });
+    setAcceptanceOpen(true);
+  };
+  const submitAcceptance = ({ confirmed, note }) => {
+    if (!selectedTask) return;
+    const result = acceptTask(selectedTask.id, { confirmed, note, reviewer: '张晓' });
+    if (!result.ok) {
+      showToast({ message: result.error, type: 'error' });
       return;
     }
-    completeTask(selectedTask.id);
-    showToast({ message: '任务已确认完成，对应异常状态已同步', type: 'success' });
+    setAcceptanceOpen(false);
+    showToast({ message: '任务已验收完成，对应异常状态已同步', type: 'success' });
   };
   const openTaskReturn = () => {
     if (!selectedReturnAction) {
@@ -1139,7 +1145,7 @@ export default function Tasks() {
             sortDirection={sortDirection}
           />
         </div>
-        <aside className="flex min-h-0 flex-col gap-3 overflow-y-auto pr-1"><DetailPanel task={selectedTask} onComplete={openCompletion} onConfirm={confirmCompletion} onRemind={remindTask} onReturn={openTaskReturn} onUpgrade={upgradeTask} onTransfer={openSingleTransfer} slaClock={slaClock} /><DeadlineStats tasks={filteredTasks} slaClock={slaClock} /><TeamOverview tasks={allTaskRows} slaClock={slaClock} onGeneratePlan={openRebalancingPlan} /></aside>
+        <aside className="flex min-h-0 flex-col gap-3 overflow-y-auto pr-1"><DetailPanel task={selectedTask} acceptanceBlockReason={selectedAcceptanceBlockReason} acceptanceChecks={selectedAcceptanceChecks} onAccept={openAcceptance} onRemind={remindTask} onReturn={openTaskReturn} onUpgrade={upgradeTask} onTransfer={openSingleTransfer} slaClock={slaClock} /><DeadlineStats tasks={filteredTasks} slaClock={slaClock} /><TeamOverview tasks={allTaskRows} slaClock={slaClock} onGeneratePlan={openRebalancingPlan} /></aside>
       </div>
       <TaskTransferDialog
         members={taskTeamMembers}
@@ -1167,7 +1173,7 @@ export default function Tasks() {
         open={returnDialogOpen}
         task={selectedTask}
       />
-      <TaskCompletionModal open={completionOpen} task={selectedTask} onClose={() => setCompletionOpen(false)} onSubmit={submitCompletion} />
+      <TaskAcceptanceDialog checks={selectedAcceptanceChecks} open={acceptanceOpen} task={selectedTask} onClose={() => setAcceptanceOpen(false)} onSubmit={submitAcceptance} />
       <TaskCreateModal open={createOpen} onClose={() => setCreateOpen(false)} onSubmit={submitManualTask} />
       <ConfirmActionDialog
         open={bulkConfirmAction === 'upgrade'}

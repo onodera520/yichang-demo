@@ -30,7 +30,7 @@ export function getDashboardTodoGroups(tasks, nowMs = Date.now(), anchorMs = now
   const overdue = activeTasks.filter(
     (task) => task.status === '已超时' || getTaskSlaPresentation(task, nowMs, anchorMs).state === 'overdue',
   );
-  const pendingConfirmation = activeTasks.filter((task) => task.status === '待确认');
+  const pendingConfirmation = activeTasks.filter((task) => task.status === '待验收');
   const dueToday = activeTasks.filter(isDueToday);
 
   return {

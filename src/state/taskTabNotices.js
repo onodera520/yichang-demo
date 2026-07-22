@@ -2,7 +2,7 @@ export const TASK_NOTICE_STATUSES = [
   '待分派',
   '已分派',
   '处理中',
-  '待确认',
+  '待验收',
   '已完成',
   '已超时',
   '已升级',
