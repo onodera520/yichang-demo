@@ -13,6 +13,8 @@ import {
 import { NavLink } from 'react-router-dom';
 import exceptionHubArt from '../assets/sidebar/exception-hub-art.png';
 import { getSidebarLayout } from '../layouts/sidebarLayout.js';
+import { useDemoState } from '../state/DemoStateContext.jsx';
+import { formatTaskTabNoticeCount } from '../state/taskTabNotices.js';
 
 const navItems = [
   { label: '异常工作台', path: '/dashboard', icon: Gauge },
@@ -24,8 +26,10 @@ const navItems = [
 ];
 
 export default function Sidebar({ collapsed, onToggle }) {
+  const { taskTabNotices } = useDemoState();
   const layout = getSidebarLayout(collapsed);
   const ToggleIcon = collapsed ? PanelLeftOpen : PanelLeftClose;
+  const assignedNoticeCount = taskTabNotices['已分派']?.length ?? 0;
 
   return (
     <aside
@@ -59,39 +63,54 @@ export default function Sidebar({ collapsed, onToggle }) {
           collapsed ? 'px-2' : 'px-3'
         }`}
       >
-        {navItems.map((item) => (
-          <NavLink
-            aria-label={item.label}
-            key={item.path}
-            title={collapsed ? item.label : undefined}
-            to={item.path}
-            className={({ isActive }) =>
-              [
-                'flex h-11 items-center justify-start overflow-hidden rounded-[8px] text-[15px] font-semibold transition-[padding,background-color,color,box-shadow] duration-200 motion-reduce:transition-none',
-                collapsed ? 'pl-[18px] pr-0' : 'px-4',
-                isActive
-                  ? 'bg-[#2F7BFF] text-white shadow-[0_10px_20px_rgba(47,123,255,0.23)]'
-                  : 'text-[#8A98B3] hover:bg-[#F3F7FD] hover:text-[#5F6B7A]',
-              ].join(' ')
-            }
-          >
-            <item.icon
-              className={`h-5 w-5 shrink-0 stroke-[2.1] transition-[margin] duration-200 motion-reduce:transition-none ${
-                collapsed ? 'mr-0' : 'mr-3'
-              }`}
-            />
-            <span
-              aria-hidden={collapsed}
-              className={`overflow-hidden whitespace-nowrap transition-[max-width,opacity,transform] duration-200 ease-out motion-reduce:transition-none ${
-                collapsed
-                  ? 'max-w-0 -translate-x-1.5 opacity-0'
-                  : 'max-w-[96px] translate-x-0 opacity-100'
-              }`}
+        {navItems.map((item) => {
+          const noticeCount = item.path === '/tasks' ? assignedNoticeCount : 0;
+          return (
+            <NavLink
+              aria-label={item.label}
+              key={item.path}
+              state={noticeCount ? { noticeTab: '已分派' } : undefined}
+              title={collapsed ? item.label : undefined}
+              to={item.path}
+              className={({ isActive }) =>
+                [
+                  'flex h-11 items-center justify-start overflow-hidden rounded-[8px] text-[15px] font-semibold transition-[padding,background-color,color,box-shadow] duration-200 motion-reduce:transition-none',
+                  'relative',
+                  collapsed ? 'pl-[18px] pr-0' : 'px-4',
+                  isActive
+                    ? 'bg-[#2F7BFF] text-white shadow-[0_10px_20px_rgba(47,123,255,0.23)]'
+                    : 'text-[#8A98B3] hover:bg-[#F3F7FD] hover:text-[#5F6B7A]',
+                ].join(' ')
+              }
             >
-              {item.label}
-            </span>
-          </NavLink>
-        ))}
+              <item.icon
+                className={`h-5 w-5 shrink-0 stroke-[2.1] transition-[margin] duration-200 motion-reduce:transition-none ${
+                  collapsed ? 'mr-0' : 'mr-3'
+                }`}
+              />
+              <span
+                aria-hidden={collapsed}
+                className={`overflow-hidden whitespace-nowrap transition-[max-width,opacity,transform] duration-200 ease-out motion-reduce:transition-none ${
+                  collapsed
+                    ? 'max-w-0 -translate-x-1.5 opacity-0'
+                    : 'max-w-[96px] translate-x-0 opacity-100'
+                }`}
+              >
+                {item.label}
+              </span>
+              {noticeCount ? (
+                <span
+                  aria-hidden="true"
+                  className={`sidebar-task-notice-badge absolute z-10 h-[18px] min-w-[18px] rounded-full bg-[#FF2D2D] px-1 text-center text-[11px] font-semibold leading-[18px] text-white shadow-[0_2px_5px_rgba(255,45,45,0.28)] ${
+                    collapsed ? 'left-[34px] top-[4px]' : 'right-3 top-[5px]'
+                  }`}
+                >
+                  {formatTaskTabNoticeCount(noticeCount)}
+                </span>
+              ) : null}
+            </NavLink>
+          );
+        })}
       </nav>
 
       <div

@@ -1,5 +1,5 @@
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useLocation } from 'react-router-dom';
 import {
   Check,
   ChevronLeft,
@@ -57,6 +57,10 @@ import {
   applyOrderDashboardPreset,
   getOrderDashboardPresetMeta,
 } from './orders/dashboardPreset.js';
+import {
+  createSourceAdvanceIntent,
+  resolveSourceAdvance,
+} from './tasks/taskAutoAdvance.js';
 
 const tabs = ['全部', '地址异常', '缺货', '物流延误', '平台同步失败', '支付异常', '退款', '清关异常'];
 const filterDefaults = {
@@ -169,7 +173,6 @@ function statusClass(status) {
 }
 
 export default function Orders() {
-  const navigate = useNavigate();
   const location = useLocation();
   const { showToast } = useToast();
   const {
@@ -448,13 +451,33 @@ export default function Orders() {
       return;
     }
     requestOrderAction(drawerOrder, '生成协同任务', () => {
+      const advanceIntent = createSourceAdvanceIntent(
+        sortedRows.map((row) => row.id),
+        drawerOrder.id,
+      );
       const result = createOrderTask(drawerOrder);
       if (!result.ok) {
         showToast({ message: result.error, type: 'info' });
         return;
       }
+
+      const advance = resolveSourceAdvance(
+        advanceIntent,
+        sortedRows.map((row) => row.id),
+        ORDER_PAGE_SIZE,
+      );
+      setActionOpen(false);
+
+      if (advance.isQueueComplete) {
+        setDrawerOrderId(null);
+        showToast({ message: '已生成任务，当前队列已处理完成', type: 'success' });
+        return;
+      }
+
+      setCurrentPage(advance.page);
+      setDrawerOrderId(advance.itemId);
+      setPendingLocateOrderId(advance.itemId);
       showToast({ message: '已生成任务', type: 'success' });
-      navigate('/tasks', { state: { highlightTaskId: result.task.id } });
     });
   };
 

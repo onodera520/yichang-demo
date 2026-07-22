@@ -8,7 +8,7 @@ import {
 import { buildInventoryTask, buildManualTask, buildOrderTask, buildSuggestionTask, completeTaskState } from './demoFlow.js';
 import { reconnectPlatformConnections } from './trustLayer.js';
 import { updateTasksByIds } from './taskOperations.js';
-import { acceptTaskState } from './taskAcceptance.js';
+import { acceptTasksState, acceptTaskState } from './taskAcceptance.js';
 import { reopenTaskState, returnTaskState } from './taskReturn.js';
 import {
   clearTaskTabNotice as clearTaskTabNoticeState,
@@ -184,6 +184,16 @@ export function DemoStateProvider({ children }) {
     return { ok: true, task: result.task };
   };
 
+  const acceptTasks = (taskIds, options) => {
+    const result = acceptTasksState({ orders, inventory, tasks }, taskIds, options);
+    if (!result.ok) return result;
+
+    setOrders(result.state.orders);
+    setInventory(result.state.inventory);
+    setTaskState((current) => commitTaskRows(current, result.state.tasks));
+    return result;
+  };
+
   const applyTaskReturn = (transition, taskId, options) => {
     const result = transition({ orders, inventory, tasks }, taskId, options);
     if (!result.ok) return result;
@@ -239,6 +249,7 @@ export function DemoStateProvider({ children }) {
       updateTasks,
       completeTask,
       acceptTask,
+      acceptTasks,
       returnTask,
       reopenTask,
       clearTaskTabNotice,

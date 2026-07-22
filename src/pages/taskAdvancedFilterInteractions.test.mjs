@@ -15,7 +15,7 @@ test('advanced task filters participate in filtering and pagination reset', () =
   assert.match(source, /matchesTaskAdvancedFilters\(/);
   assert.match(source, /const \[advancedFilters, setAdvancedFilters\]/);
   assert.match(source, /\[\s*activeTab,\s*advancedFilters,\s*allTaskRows,\s*filters,/);
-  assert.match(source, /\[activeTab, advancedFilters, filters, topbarKeyword\]/);
+  assert.match(source, /\[activeTab, advancedFilters, filters, sortDirection, topbarKeyword\]/);
 });
 
 test('reset and task-location flows clear applied advanced filters', () => {

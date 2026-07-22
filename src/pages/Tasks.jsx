@@ -1,5 +1,5 @@
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import {
   AlertCircle,
   ArrowRight,
@@ -16,18 +16,19 @@ import {
   Send,
   ShieldAlert,
   UserRound,
-  X,
 } from 'lucide-react';
 import FilterSelect from '../components/common/FilterSelect.jsx';
 import ConfirmActionDialog from '../components/common/ConfirmActionDialog.jsx';
 import PageHeaderActionButton from '../components/common/PageHeaderActionButton.jsx';
 import RiskTag from '../components/common/RiskTag.jsx';
 import TaskAcceptanceDialog from '../components/common/TaskAcceptanceDialog.jsx';
+import TaskBatchAcceptanceDialog from '../components/common/TaskBatchAcceptanceDialog.jsx';
 import TaskCreateModal from '../components/common/TaskCreateModal.jsx';
 import TaskReturnDialog from '../components/common/TaskReturnDialog.jsx';
 import LiveUpdateTime from '../components/LiveUpdateTime.jsx';
 import { formatCompactDateTime } from '../data/demoTime.js';
 import { taskTeamMembers } from '../data/mockData.js';
+import taskQueueCompleteImage from '../assets/empty-states/task-queue-complete.png';
 import { useToast } from '../components/common/Toast.jsx';
 import { useRefreshTime } from '../hooks/useRefreshTime.js';
 import { useSlaClock } from '../hooks/useSlaClock.js';
@@ -64,6 +65,11 @@ import {
 } from './tasks/taskAdvancedFilters.js';
 import { matchesTaskTab } from './tasks/taskListVisibility.js';
 import { canRemindTask, getTaskDetailActionPolicy } from './tasks/taskDetailActions.js';
+import { createTaskAdvanceIntent, resolveTaskAdvance } from './tasks/taskAutoAdvance.js';
+import {
+  getBatchAcceptanceSummary,
+  reconcileBatchAcceptanceSelection,
+} from './tasks/taskBatchAcceptance.js';
 
 const tabs = ['全部待办', '已分派', '处理中', '待验收', '已超时', '已升级', '已完成'];
 const owners = ['王敏', '赵宁', '陈浩', '刘畅', '周扬', '张磊', '李娜'];
@@ -71,6 +77,7 @@ const sources = ['全部', '来源订单', '库存风险', '物流异常', '平�
 const risks = ['全部', '高', '中', '低'];
 const deadlines = ['全部', '今天', '2小时内', '已超时', '24小时内'];
 const TASK_PAGE_SIZE = 9;
+const TASK_TABLE_COLUMN_WIDTHS = ['5%', '10%', '21%', '20%', '11%', '11%', '11%', '11%'];
 const DEFAULT_TASK_FILTERS = { owner: '全部', source: '全部', risk: '全部', deadline: '全部' };
 function getVisiblePages(currentPage, pageCount) {
   const start = Math.max(1, Math.min(currentPage - 2, pageCount - 4));
@@ -203,6 +210,14 @@ function DeadlineFilter({ value, onChange }) {
   );
 }
 
+function TaskTableColGroup() {
+  return (
+    <colgroup>
+      {TASK_TABLE_COLUMN_WIDTHS.map((width, index) => <col key={`${width}-${index}`} style={{ width }} />)}
+    </colgroup>
+  );
+}
+
 function TaskTable({
   rows,
   selectedTaskId,
@@ -221,6 +236,8 @@ function TaskTable({
   onBulkTransfer,
   onBulkUpgrade,
   onBulkRemind,
+  onBulkAccept,
+  batchAcceptanceMode,
   onExport,
   onSort,
   onRefresh,
@@ -235,9 +252,15 @@ function TaskTable({
           <span className="pb-0.5 text-sm text-[#7889A8]">共 {totalCount} 条</span>
         </div>
         <div className="flex min-w-0 items-center justify-end gap-1.5">
-          <TableButton onClick={onBulkTransfer}>批量转交</TableButton>
-          <TableButton onClick={onBulkRemind}>批量催办</TableButton>
-          <TableButton onClick={onBulkUpgrade}>批量升级</TableButton>
+          {batchAcceptanceMode ? (
+            <TableButton onClick={onBulkAccept}>批量验收通过</TableButton>
+          ) : (
+            <>
+              <TableButton onClick={onBulkTransfer}>批量转交</TableButton>
+              <TableButton onClick={onBulkRemind}>批量催办</TableButton>
+              <TableButton onClick={onBulkUpgrade}>批量升级</TableButton>
+            </>
+          )}
           <TableButton icon={Download} onClick={onExport}>导出</TableButton>
           <TableButton aria-pressed={Boolean(sortDirection)} className="w-[126px]" onClick={onSort}>
             {sortDirection === 'asc' ? '截止时间升序' : sortDirection === 'desc' ? '截止时间降序' : '按截止时间排序'}
@@ -251,17 +274,7 @@ function TaskTable({
       </div>
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
         <table className="w-full table-fixed border-collapse text-left">
-          <colgroup>
-            <col className="w-[5%]" />
-            <col className="w-[10%]" />
-            <col className="w-[20%]" />
-            <col className="w-[19%]" />
-            <col className="w-[10%]" />
-            <col className="w-[11%]" />
-            <col className="w-[11%]" />
-            <col className="w-[10%]" />
-            <col className="w-[4%]" />
-          </colgroup>
+          <TaskTableColGroup />
           <thead className="bg-[#FAFBFD] text-sm font-semibold text-[#6F7F98]">
             <tr className="h-[52px] border-y border-[#E3E9F3]">
               <th className="pl-4"><Checkbox checked={allSelected} onChange={onToggleAll} /></th>
@@ -272,23 +285,12 @@ function TaskTable({
               <th>状态</th>
               <th>SLA 状态</th>
               <th>创建时间</th>
-              <th>操作</th>
             </tr>
           </thead>
         </table>
         <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
           <table className="w-full table-fixed border-collapse text-left">
-            <colgroup>
-              <col className="w-[5%]" />
-              <col className="w-[10%]" />
-              <col className="w-[20%]" />
-              <col className="w-[19%]" />
-              <col className="w-[10%]" />
-              <col className="w-[11%]" />
-              <col className="w-[11%]" />
-              <col className="w-[10%]" />
-              <col className="w-[4%]" />
-            </colgroup>
+            <TaskTableColGroup />
             <tbody className="text-sm text-[#1D273B]">
               {rows.map((row) => {
                 const active = row.id === selectedTaskId;
@@ -321,9 +323,6 @@ function TaskTable({
                       <span className="whitespace-nowrap" title={row.createdAt}>
                         {formatCompactDateTime(row.createdAt)}
                       </span>
-                    </td>
-                    <td>
-                      <button className="text-sm font-medium text-[#2F7BFF]" type="button">查看</button>
                     </td>
                   </tr>
                 );
@@ -371,6 +370,7 @@ function TableButton({ children, icon: Icon, className = '', ...buttonProps }) {
 
 function DetailPanel({
   task,
+  emptyMode,
   acceptanceBlockReason,
   acceptanceChecks,
   onAccept,
@@ -380,7 +380,22 @@ function DetailPanel({
   onTransfer,
   slaClock,
 }) {
-  if (!task) return null;
+  if (!task) {
+    const queueComplete = emptyMode === 'completed';
+    return (
+      <section className="flex min-h-[380px] shrink-0 flex-col items-center justify-center overflow-hidden rounded-[8px] border border-[#E3E9F3] bg-white px-6 py-8 text-center shadow-[var(--shadow-card)]">
+        <img alt="任务队列处理完成" className="h-28 w-28 object-contain" src={taskQueueCompleteImage} />
+        {queueComplete ? (
+          <h2 className="mt-4 text-[17px] font-semibold text-[#263246]">当前队列已处理完成</h2>
+        ) : (
+          <h2 className="mt-4 text-[17px] font-semibold text-[#263246]">暂无符合条件的任务</h2>
+        )}
+        <p className="mt-2 text-[13px] leading-5 text-[#8A98B3]">
+          {queueComplete ? '可切换任务状态或调整筛选条件继续处理' : '请调整筛选条件或切换任务状态查看'}
+        </p>
+      </section>
+    );
+  }
   const returnAction = getTaskReturnAction(task);
   const actionPolicy = getTaskDetailActionPolicy(task);
   const primaryBlockReason = actionPolicy.primaryAction === 'accept' ? acceptanceBlockReason : '';
@@ -396,12 +411,11 @@ function DetailPanel({
 
   return (
     <section className="shrink-0 overflow-hidden rounded-[8px] border border-[#E3E9F3] bg-white px-4 py-3.5 shadow-[var(--shadow-card)]">
-      <div className="mb-4 flex items-start justify-between">
+      <div className="mb-4 flex items-start">
         <div className="flex items-center gap-2">
           <h2 className="text-[18px] font-semibold tracking-[-0.01em] text-[#111827]">{task.title}</h2>
           <RiskTag type={task.riskLevel} className="h-6 rounded-full px-3 text-xs">{task.riskLevel}风险</RiskTag>
         </div>
-        <button className="text-[#8A98B3]" type="button"><X className="h-4.5 w-4.5" /></button>
       </div>
       <div className="grid grid-cols-2 gap-5 border-b border-[#E6EAF2] pb-3 text-[13px]">
         <div>
@@ -594,9 +608,11 @@ function TeamOverview({ tasks, slaClock, onGeneratePlan }) {
 
 export default function Tasks() {
   const location = useLocation();
+  const navigate = useNavigate();
   const { showToast } = useToast();
   const {
     acceptTask,
+    acceptTasks,
     createManualTask,
     inventory,
     orders,
@@ -615,6 +631,8 @@ export default function Tasks() {
   const tabListRef = useRef(null);
   const tabButtonRefs = useRef(new Map());
   const indicatorReadyRef = useRef(false);
+  const pendingTaskAdvanceRef = useRef(null);
+  const handledNoticeRouteKeyRef = useRef(null);
   const [tabIndicator, setTabIndicator] = useState({ x: 0, ready: false, animated: false });
   const [filters, setFilters] = useState(DEFAULT_TASK_FILTERS);
   const [advancedFilters, setAdvancedFilters] = useState(taskAdvancedFilterDefaults);
@@ -627,6 +645,7 @@ export default function Tasks() {
   const [transferOwner, setTransferOwner] = useState('王敏');
   const [currentPage, setCurrentPage] = useState(1);
   const [acceptanceOpen, setAcceptanceOpen] = useState(false);
+  const [batchAcceptanceOpen, setBatchAcceptanceOpen] = useState(false);
   const [returnDialogOpen, setReturnDialogOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [bulkConfirmAction, setBulkConfirmAction] = useState(null);
@@ -637,6 +656,7 @@ export default function Tasks() {
     beforeWorkloads: [],
     afterWorkloads: [],
   });
+  const [queueComplete, setQueueComplete] = useState(false);
 
   const allTaskRows = tasks;
 
@@ -687,12 +707,9 @@ export default function Tasks() {
     setFocusedTaskIds([]);
     setSelectedTaskId(incomingTaskId);
     setSelectedIds([incomingTaskId]);
+    pendingTaskAdvanceRef.current = null;
+    setQueueComplete(false);
   }, [location.state]);
-
-  useEffect(() => {
-    if (selectedTaskId) return;
-    setSelectedTaskId(allTaskRows[0]?.id);
-  }, [allTaskRows, selectedTaskId]);
 
   const filteredTasks = useMemo(() => {
     return allTaskRows.filter((task) => {
@@ -736,21 +753,51 @@ export default function Tasks() {
     return prioritizeTasksByIds(sortedTasks, focusedTaskIds);
   }, [filteredTasks, focusedTaskIds, slaClock.anchorMs, slaClock.nowMs, sortDirection]);
 
+  useLayoutEffect(() => {
+    const displayedTaskIds = displayedTasks.map((task) => task.id);
+    const pendingAdvance = pendingTaskAdvanceRef.current;
+
+    if (pendingAdvance) {
+      pendingTaskAdvanceRef.current = null;
+      const result = resolveTaskAdvance(pendingAdvance, displayedTaskIds, TASK_PAGE_SIZE);
+      setSelectedTaskId(result.taskId);
+      setCurrentPage(result.page);
+      setQueueComplete(result.isQueueComplete);
+      return;
+    }
+
+    if (!displayedTaskIds.length) {
+      setSelectedTaskId(null);
+      return;
+    }
+
+    if (!displayedTaskIds.includes(selectedTaskId)) {
+      setSelectedTaskId(displayedTaskIds[0]);
+      setCurrentPage(1);
+    }
+  }, [displayedTasks, selectedTaskId]);
+
   useEffect(() => {
     setCurrentPage(1);
-  }, [activeTab, advancedFilters, filters, topbarKeyword]);
+    pendingTaskAdvanceRef.current = null;
+    setQueueComplete(false);
+  }, [activeTab, advancedFilters, filters, sortDirection, topbarKeyword]);
 
   const pageCount = Math.max(1, Math.ceil(displayedTasks.length / TASK_PAGE_SIZE));
   const safePage = Math.min(currentPage, pageCount);
   const pagedTasks = displayedTasks.slice((safePage - 1) * TASK_PAGE_SIZE, safePage * TASK_PAGE_SIZE);
   const visiblePages = getVisiblePages(safePage, pageCount);
-  const selectedTask = filteredTasks.find((task) => task.id === selectedTaskId) ?? filteredTasks[0] ?? null;
+  const selectedTask = displayedTasks.find((task) => task.id === selectedTaskId) ?? displayedTasks[0] ?? null;
   const selectedAcceptanceChecks = useMemo(
     () => getTaskAcceptanceChecks(selectedTask, orders, inventory),
     [inventory, orders, selectedTask],
   );
   const selectedAcceptanceBlockReason = getTaskAcceptanceBlockReason(selectedTask, orders, inventory);
   const selectedReturnAction = getTaskReturnAction(selectedTask);
+  const batchAcceptance = useMemo(
+    () => getBatchAcceptanceSummary(displayedTasks, selectedIds, orders, inventory),
+    [displayedTasks, inventory, orders, selectedIds],
+  );
   const selectedTaskRows = allTaskRows.filter((task) => selectedIds.includes(task.id));
   const transferTaskRows = transferMode === 'bulk'
     ? selectedTaskRows
@@ -776,6 +823,8 @@ export default function Tasks() {
 
   const handleTabClick = (tab) => {
     const noticeIds = tab === '全部待办' ? [] : (taskTabNotices[tab] ?? []);
+    pendingTaskAdvanceRef.current = null;
+    setQueueComplete(false);
     setActiveTab(tab);
 
     if (!noticeIds.length) {
@@ -795,6 +844,30 @@ export default function Tasks() {
     showToast({ message: `已定位 ${noticeIds.length} 条新流转任务`, type: 'info' });
   };
 
+  useEffect(() => {
+    const noticeTab = location.state?.noticeTab;
+    if (!noticeTab || handledNoticeRouteKeyRef.current === location.key) return;
+
+    handledNoticeRouteKeyRef.current = location.key;
+    handleTabClick(noticeTab);
+    navigate(location.pathname, { replace: true, state: null });
+  }, [location.key, location.pathname, location.state?.noticeTab]);
+
+  const prepareTaskAdvance = () => {
+    if (!selectedTask) return;
+    pendingTaskAdvanceRef.current = createTaskAdvanceIntent(
+      displayedTasks.map((task) => task.id),
+      selectedTask.id,
+    );
+    setQueueComplete(false);
+  };
+
+  const selectTask = (taskId) => {
+    pendingTaskAdvanceRef.current = null;
+    setQueueComplete(false);
+    setSelectedTaskId(taskId);
+  };
+
   const updateTask = (patch, toastMessage) => {
     if (!selectedTask) return;
     const applyPatch = (task) => ({ ...task, ...patch, processLogs: [...task.processLogs, { time: '刚刚', owner: task.owner === '未分派' ? '系统' : task.owner, action: patch.status === '已完成' ? '完成任务' : patch.status === '已升级' ? '升级主管' : '更新任务', detail: toastMessage, tone: patch.status === '已升级' ? 'red' : 'green' }] });
@@ -807,6 +880,7 @@ export default function Tasks() {
       showToast({ message: blockReason, type: 'info' });
       return;
     }
+    prepareTaskAdvance();
     updateTask({ status: '已升级' }, '已升级主管');
   };
   const remindTask = () => {
@@ -814,6 +888,7 @@ export default function Tasks() {
       showToast({ message: '当前状态无需催办', type: 'info' });
       return;
     }
+    prepareTaskAdvance();
     updateTaskState(selectedTask.id, buildTaskReminderPatch);
     showToast({
       message: selectedTask.status === '已分派' ? '已提醒负责人尽快接单' : '已提醒负责人尽快处理',
@@ -834,8 +909,39 @@ export default function Tasks() {
       showToast({ message: result.error, type: 'error' });
       return;
     }
+    prepareTaskAdvance();
     setAcceptanceOpen(false);
     showToast({ message: '任务已验收完成，对应异常状态已同步', type: 'success' });
+  };
+  const openBatchAcceptance = () => {
+    if (!batchAcceptance.selectedTasks.length) {
+      showToast({ message: '请先勾选当前列表中的待验收任务', type: 'info' });
+      return;
+    }
+    setBatchAcceptanceOpen(true);
+  };
+  const confirmBatchAcceptance = () => {
+    const result = acceptTasks(
+      batchAcceptance.selectedTasks.map((task) => task.id),
+      { reviewer: '张晓' },
+    );
+    if (!result.ok) {
+      showToast({ message: result.error, type: 'error' });
+      return;
+    }
+
+    const acceptedIdSet = new Set(result.acceptedIds);
+    const remainingTasks = displayedTasks.filter((task) => !acceptedIdSet.has(task.id));
+    pendingTaskAdvanceRef.current = null;
+    setSelectedIds((current) => reconcileBatchAcceptanceSelection(current, result.acceptedIds));
+    setBatchAcceptanceOpen(false);
+    setCurrentPage(1);
+    setSelectedTaskId(remainingTasks[0]?.id ?? null);
+    setQueueComplete(remainingTasks.length === 0);
+    showToast({
+      message: `已验收通过 ${result.acceptedIds.length} 条，跳过 ${result.skipped.length} 条`,
+      type: 'success',
+    });
   };
   const openTaskReturn = () => {
     if (!selectedReturnAction) {
@@ -858,6 +964,7 @@ export default function Tasks() {
       return;
     }
 
+    prepareTaskAdvance();
     const successMessages = {
       return: '任务已退回处理中',
       reopen: '任务已重新打开',
@@ -923,6 +1030,7 @@ export default function Tasks() {
       return;
     }
     if (!selectedTask) return;
+    prepareTaskAdvance();
     const applyTransfer = (task) => ({ ...task, owner: transferOwner, status: task.status === '待分派' ? '已分派' : task.status, processLogs: [...task.processLogs, { time: '刚刚', owner: '系统', action: '转交任务', detail: `已转交给 ${transferOwner}`, tone: 'green' }] });
     updateTaskState(selectedTask.id, applyTransfer);
     setTransferOpen(false);
@@ -1021,6 +1129,8 @@ export default function Tasks() {
     setCurrentPage(1);
     setSelectedTaskId(task.id);
     setSelectedIds([task.id]);
+    pendingTaskAdvanceRef.current = null;
+    setQueueComplete(false);
     showToast({ message: '任务已创建', type: 'success' });
   };
   const toggleAll = () => { setSelectedIds((current) => { const visibleIds = pagedTasks.map((task) => task.id); if (allSelected) return current.filter((id) => !visibleIds.includes(id)); return [...new Set([...current, ...visibleIds])]; }); };
@@ -1031,6 +1141,8 @@ export default function Tasks() {
     setFocusedTaskIds([]);
     setActiveTab('全部待办');
     setCurrentPage(1);
+    pendingTaskAdvanceRef.current = null;
+    setQueueComplete(false);
   };
 
   return (
@@ -1125,7 +1237,7 @@ export default function Tasks() {
             selectedTaskId={selectedTask?.id}
             selectedIds={selectedIds}
             focusedTaskIds={focusedTaskIds}
-            onSelectTask={setSelectedTaskId}
+            onSelectTask={selectTask}
             onToggleSelected={(id) => setSelectedIds((current) => (current.includes(id) ? current.filter((item) => item !== id) : [...current, id]))}
             onToggleAll={toggleAll}
             allSelected={allSelected}
@@ -1138,6 +1250,8 @@ export default function Tasks() {
             onBulkTransfer={openBulkTransfer}
             onBulkRemind={remindSelectedTasks}
             onBulkUpgrade={() => openBulkConfirm('upgrade')}
+            onBulkAccept={openBatchAcceptance}
+            batchAcceptanceMode={activeTab === '待验收'}
             onExport={exportTasks}
             onSort={toggleDeadlineSort}
             onRefresh={refreshTasks}
@@ -1145,7 +1259,7 @@ export default function Tasks() {
             sortDirection={sortDirection}
           />
         </div>
-        <aside className="flex min-h-0 flex-col gap-3 overflow-y-auto pr-1"><DetailPanel task={selectedTask} acceptanceBlockReason={selectedAcceptanceBlockReason} acceptanceChecks={selectedAcceptanceChecks} onAccept={openAcceptance} onRemind={remindTask} onReturn={openTaskReturn} onUpgrade={upgradeTask} onTransfer={openSingleTransfer} slaClock={slaClock} /><DeadlineStats tasks={filteredTasks} slaClock={slaClock} /><TeamOverview tasks={allTaskRows} slaClock={slaClock} onGeneratePlan={openRebalancingPlan} /></aside>
+        <aside className="flex min-h-0 flex-col gap-3 overflow-y-auto pr-1"><DetailPanel task={selectedTask} emptyMode={queueComplete ? 'completed' : 'filtered'} acceptanceBlockReason={selectedAcceptanceBlockReason} acceptanceChecks={selectedAcceptanceChecks} onAccept={openAcceptance} onRemind={remindTask} onReturn={openTaskReturn} onUpgrade={upgradeTask} onTransfer={openSingleTransfer} slaClock={slaClock} /><DeadlineStats tasks={filteredTasks} slaClock={slaClock} /><TeamOverview tasks={allTaskRows} slaClock={slaClock} onGeneratePlan={openRebalancingPlan} /></aside>
       </div>
       <TaskTransferDialog
         members={taskTeamMembers}
@@ -1174,6 +1288,14 @@ export default function Tasks() {
         task={selectedTask}
       />
       <TaskAcceptanceDialog checks={selectedAcceptanceChecks} open={acceptanceOpen} task={selectedTask} onClose={() => setAcceptanceOpen(false)} onSubmit={submitAcceptance} />
+      <TaskBatchAcceptanceDialog
+        eligibleTasks={batchAcceptance.eligibleTasks}
+        onClose={() => setBatchAcceptanceOpen(false)}
+        onConfirm={confirmBatchAcceptance}
+        open={batchAcceptanceOpen}
+        selectedCount={batchAcceptance.selectedTasks.length}
+        skippedTasks={batchAcceptance.skippedTasks}
+      />
       <TaskCreateModal open={createOpen} onClose={() => setCreateOpen(false)} onSubmit={submitManualTask} />
       <ConfirmActionDialog
         open={bulkConfirmAction === 'upgrade'}

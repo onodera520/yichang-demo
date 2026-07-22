@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  acceptTasksState,
   acceptTaskState,
   getTaskAcceptanceBlockReason,
   getTaskAcceptanceChecks,
@@ -84,4 +85,61 @@ test('未勾选核对声明或非待验收状态时不能完成', () => {
   });
   assert.equal(processing.ok, false);
   assert.equal(processing.error, '当前状态无法验收');
+});
+
+test('批量验收通过合格任务并跳过缺少凭证的任务', () => {
+  const eligibleOrder = { id: 'order-eligible', status: '处理中' };
+  const blockedOrder = { id: 'order-blocked', status: '处理中' };
+  const eligibleTask = {
+    ...task,
+    id: 'task-eligible',
+    title: 'eligible task',
+    sourceId: eligibleOrder.id,
+  };
+  const blockedTask = {
+    ...task,
+    id: 'task-blocked',
+    title: 'blocked task',
+    sourceId: blockedOrder.id,
+    completionEvidence: { ...evidence, referenceNo: '', attachment: null },
+  };
+  const batchState = {
+    orders: [eligibleOrder, blockedOrder],
+    inventory: [],
+    tasks: [eligibleTask, blockedTask],
+  };
+  const blockedReason = getTaskAcceptanceBlockReason(blockedTask, batchState.orders, []);
+
+  const result = acceptTasksState(
+    batchState,
+    [eligibleTask.id, blockedTask.id, eligibleTask.id],
+    { reviewer: '张晓', note: '批量验收' },
+  );
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.acceptedIds, [eligibleTask.id]);
+  assert.deepEqual(result.skipped, [{ id: blockedTask.id, title: blockedTask.title, reason: blockedReason }]);
+  assert.equal(result.state.tasks.find(({ id }) => id === eligibleTask.id).status, '已完成');
+  assert.equal(result.state.tasks.find(({ id }) => id === blockedTask.id).status, '待验收');
+  assert.equal(result.state.orders.find(({ id }) => id === eligibleOrder.id).status, '已完成');
+  assert.equal(result.state.orders.find(({ id }) => id === blockedOrder.id).status, '处理中');
+  assert.equal(result.state.tasks.find(({ id }) => id === eligibleTask.id).acceptance.reviewer, '张晓');
+  assert.equal(result.state.tasks.find(({ id }) => id === eligibleTask.id).processLogs.at(-1).action, '验收通过');
+});
+
+test('批量验收在全部任务不合格时不修改状态', () => {
+  const blockedTask = {
+    ...task,
+    id: 'task-blocked-only',
+    title: 'blocked only',
+    completionEvidence: { ...evidence, resolvedSource: false },
+  };
+  const blockedState = { ...state, tasks: [blockedTask] };
+
+  const result = acceptTasksState(blockedState, [blockedTask.id], { reviewer: '张晓' });
+
+  assert.equal(result.ok, false);
+  assert.deepEqual(result.acceptedIds, []);
+  assert.equal(result.skipped.length, 1);
+  assert.equal(result.state, blockedState);
 });

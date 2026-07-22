@@ -106,3 +106,39 @@ export function acceptTaskState(
     },
   };
 }
+
+export function acceptTasksState(state, taskIds, { reviewer = '张晓', note = '' } = {}) {
+  const uniqueTaskIds = [...new Set((taskIds ?? []).filter(Boolean))];
+  let currentState = state;
+  const acceptedIds = [];
+  const skipped = [];
+
+  uniqueTaskIds.forEach((taskId) => {
+    const task = currentState.tasks.find((item) => item.id === taskId);
+    const result = acceptTaskState(currentState, taskId, {
+      confirmed: true,
+      reviewer,
+      note,
+    });
+
+    if (!result.ok) {
+      skipped.push({
+        id: taskId,
+        title: task?.title || taskId,
+        reason: result.error,
+      });
+      return;
+    }
+
+    acceptedIds.push(taskId);
+    currentState = result.state;
+  });
+
+  return {
+    ok: acceptedIds.length > 0,
+    state: currentState,
+    acceptedIds,
+    skipped,
+    error: acceptedIds.length > 0 ? '' : '没有符合验收条件的任务',
+  };
+}

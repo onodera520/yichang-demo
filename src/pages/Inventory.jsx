@@ -1,5 +1,5 @@
 ﻿import React, { useEffect, useMemo, useState } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useLocation } from 'react-router-dom';
 import {
   Boxes,
   ChevronLeft,
@@ -47,6 +47,10 @@ import productBottleImage from '../assets/products/out-wb-01.png';
 import productPetFeederImage from '../assets/products/pet-feed-02.png';
 import { useDemoState } from '../state/DemoStateContext.jsx';
 import { useTopbarFilter } from '../state/TopbarFilterContext.jsx';
+import {
+  createSourceAdvanceIntent,
+  resolveSourceAdvance,
+} from './tasks/taskAutoAdvance.js';
 import { getReplenishmentQuantity, requiresStaleDataConfirmation } from '../state/trustLayer.js';
 import { getSourceTaskBlockReason } from '../state/sourceTaskWorkflow.js';
 import { formatMetricValue } from '../utils/formatMetricValue.js';
@@ -222,7 +226,6 @@ function redIfLow(row, field) {
 }
 
 export default function Inventory() {
-  const navigate = useNavigate();
   const location = useLocation();
   const { showToast } = useToast();
   const {
@@ -383,6 +386,7 @@ export default function Inventory() {
   const taskBlockReason = selectedSku
     ? getSourceTaskBlockReason(selectedSku, tasks, 'inventory')
     : '';
+  const inventoryTaskAlreadyCreated = taskBlockReason === '已存在进行中的关联任务';
 
   const handleModifyPurchase = () => {
     if (!selectedSku) return;
@@ -416,13 +420,32 @@ export default function Inventory() {
     const stale = requiresStaleDataConfirmation(selectedSku, platformConnections);
     const highRisk = selectedSku.riskLevel === '高';
     const execute = () => {
+      const advanceIntent = createSourceAdvanceIntent(
+        sortedRows.map((row) => row.sku),
+        selectedSku.sku,
+      );
       const result = createInventoryTask(selectedSku, { quantity: adjustedQuantity });
       if (!result.ok) {
         showToast({ message: result.error, type: 'info' });
         return;
       }
+
+      const advance = resolveSourceAdvance(
+        advanceIntent,
+        sortedRows.map((row) => row.sku),
+        INVENTORY_PAGE_SIZE,
+      );
+
+      if (advance.isQueueComplete) {
+        setSelectedSku(null);
+        showToast({ message: '补货任务已创建，当前队列已处理完成', type: 'success' });
+        return;
+      }
+
+      const nextSku = sortedRows.find((row) => row.sku === advance.itemId);
+      setCurrentPage(advance.page);
+      openSkuDrawer(nextSku);
       showToast({ message: '补货任务已创建', type: 'success' });
-      navigate('/tasks', { state: { detailTaskId: result.task.id, highlightTaskId: result.task.id } });
     };
     if (!stale && !highRisk) {
       execute();
@@ -706,7 +729,7 @@ export default function Inventory() {
               title={taskBlockReason}
               type="button"
             >
-              创建补货任务
+              {inventoryTaskAlreadyCreated ? '任务已创建' : '创建补货任务'}
             </button>
           </div>
         }

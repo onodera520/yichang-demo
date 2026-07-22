@@ -2,7 +2,6 @@ import React, { useEffect, useRef, useState } from 'react';
 import { AlertCircle, CheckCircle2, X } from 'lucide-react';
 
 export default function TaskAcceptanceDialog({ checks = [], onClose, onSubmit, open, task }) {
-  const [confirmed, setConfirmed] = useState(false);
   const [note, setNote] = useState('');
   const onCloseRef = useRef(onClose);
   const previousActiveElementRef = useRef(null);
@@ -16,7 +15,6 @@ export default function TaskAcceptanceDialog({ checks = [], onClose, onSubmit, o
   useEffect(() => {
     if (!open) return undefined;
     previousActiveElementRef.current = document.activeElement;
-    setConfirmed(false);
     setNote('');
     const handleKeyDown = (event) => {
       if (event.key === 'Escape') onCloseRef.current();
@@ -32,7 +30,7 @@ export default function TaskAcceptanceDialog({ checks = [], onClose, onSubmit, o
 
   const submit = (event) => {
     event.preventDefault();
-    if (!allPassed || !confirmed) return;
+    if (!allPassed) return;
     onSubmit({ confirmed: true, note });
   };
 
@@ -90,21 +88,11 @@ export default function TaskAcceptanceDialog({ checks = [], onClose, onSubmit, o
           value={note}
         />
 
-        <label className="mt-4 flex items-start gap-2 text-sm text-[#344767]">
-          <input
-            checked={confirmed}
-            className="mt-0.5 h-4 w-4 accent-[#2F7BFF]"
-            onChange={(event) => setConfirmed(event.target.checked)}
-            type="checkbox"
-          />
-          <span>已核对员工处理结果和凭证，确认原异常已经解决</span>
-        </label>
-
         <div className="mt-5 flex justify-end gap-2">
           <button className="h-9 rounded-[7px] border border-[#C9D3E1] px-4 text-sm font-semibold text-[#263246]" onClick={onClose} type="button">取消</button>
           <button
             className="h-9 rounded-[7px] bg-[#2F7BFF] px-4 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-[#AFCBFF]"
-            disabled={!allPassed || !confirmed}
+            disabled={!allPassed}
             type="submit"
           >
             验收通过
