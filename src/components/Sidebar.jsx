@@ -1,6 +1,5 @@
 import React from 'react';
 import {
-  Activity,
   BarChart3,
   ClipboardList,
   Gauge,
@@ -11,6 +10,7 @@ import {
   ShoppingCart,
 } from 'lucide-react';
 import { NavLink } from 'react-router-dom';
+import exceptionHubLogo from '../assets/branding/exception-hub-logo.png';
 import exceptionHubArt from '../assets/sidebar/exception-hub-art.png';
 import { getSidebarLayout } from '../layouts/sidebarLayout.js';
 import { useDemoState } from '../state/DemoStateContext.jsx';
@@ -42,18 +42,20 @@ export default function Sidebar({ collapsed, onToggle }) {
           collapsed ? 'pl-[18px] pr-0' : 'px-5'
         }`}
       >
-        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[12px] bg-[#2F7BFF] text-white shadow-[0_10px_20px_rgba(47,123,255,0.22)]">
-          <Activity className="h-5 w-5" />
-        </div>
         <div
-          aria-hidden={collapsed}
-          className={`overflow-hidden whitespace-nowrap text-[19px] font-semibold tracking-[-0.02em] text-[#2F7BFF] transition-[max-width,margin,opacity,transform] duration-200 ease-out motion-reduce:transition-none ${
-            collapsed
-              ? 'ml-0 max-w-0 -translate-x-2 opacity-0'
-              : 'ml-2.5 max-w-[116px] translate-x-0 opacity-100'
+          className={`relative shrink-0 overflow-hidden transition-[width,height] duration-200 ease-out motion-reduce:transition-none ${
+            collapsed ? 'h-8 w-8' : 'h-[38px] w-[118px]'
           }`}
         >
-          异常中枢
+          <img
+            src={exceptionHubLogo}
+            alt="异常中枢"
+            className={`absolute max-w-none transition-[width,height,left,top] duration-200 ease-out motion-reduce:transition-none ${
+              collapsed
+                ? 'left-0 top-[1px] h-[30px] w-auto'
+                : 'inset-0 h-full w-full object-contain'
+            }`}
+          />
         </div>
       </div>
 

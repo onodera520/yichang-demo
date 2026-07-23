@@ -64,3 +64,10 @@ test('sidebar icons keep a stable horizontal anchor during width transitions', (
     'navigation links must not jump from start alignment to center alignment',
   );
 });
+
+test('sidebar uses the supplied exception hub brand logo', () => {
+  assert.match(sidebarSource, /exceptionHubLogo from '\.\.\/assets\/branding\/exception-hub-logo\.png'/);
+  assert.match(sidebarSource, /src=\{exceptionHubLogo\}/);
+  assert.match(sidebarSource, /alt="异常中枢"/);
+  assert.doesNotMatch(sidebarSource, /<Activity/);
+});

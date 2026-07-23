@@ -2,6 +2,8 @@
 import { useLocation } from 'react-router-dom';
 import {
   Boxes,
+  Check,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   Download,
@@ -55,6 +57,13 @@ import { getReplenishmentQuantity, requiresStaleDataConfirmation } from '../stat
 import { getSourceTaskBlockReason } from '../state/sourceTaskWorkflow.js';
 import { formatMetricValue } from '../utils/formatMetricValue.js';
 import { buildInventoryCsv } from './inventory/inventoryExport.js';
+import {
+  buildAdjustedInventoryAdoptionPatch,
+  buildDirectInventoryAdoptionPatch,
+  getInventorySuggestionGateReason,
+  isDirectInventorySuggestionAdopted,
+} from './inventory/inventorySuggestionActions.js';
+import { resolveInventoryTaskScenario } from './inventory/inventoryTaskScenario.js';
 import {
   applyInventoryDashboardPreset,
   buildInventoryMetricStats,
@@ -225,6 +234,18 @@ function redIfLow(row, field) {
   return false;
 }
 
+function getDefaultAdjustReason(kind) {
+  if (kind === 'clearance') return '促销清库存';
+  if (kind === 'transfer') return '平衡仓间库存';
+  return '覆盖安全库存';
+}
+
+function getAdjustReasonOptions(kind) {
+  if (kind === 'clearance') return ['促销清库存', '组合销售', '跨仓消化', '停止后续采购', '人工复核调整'];
+  if (kind === 'transfer') return ['平衡仓间库存', '缓解目标仓缺货', '活动备货', '人工复核调整'];
+  return ['覆盖安全库存', '预算限制', '供应商交期变化', '人工复核调整'];
+}
+
 export default function Inventory() {
   const location = useLocation();
   const { showToast } = useToast();
@@ -234,6 +255,7 @@ export default function Inventory() {
     createInventoryTask,
     inventory,
     platformConnections,
+    saveInventoryAdjustment,
     tasks,
   } = useDemoState();
   const { keyword: topbarKeyword, platform: topbarPlatform } = useTopbarFilter();
@@ -249,6 +271,10 @@ export default function Inventory() {
   const [adjustedQuantity, setAdjustedQuantity] = useState('300');
   const [adjustReason, setAdjustReason] = useState('覆盖安全库存');
   const [adjustNote, setAdjustNote] = useState('');
+  const [transferFromWarehouse, setTransferFromWarehouse] = useState('');
+  const [transferToWarehouse, setTransferToWarehouse] = useState('');
+  const [adjustmentOpen, setAdjustmentOpen] = useState(false);
+  const [evidenceOpen, setEvidenceOpen] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [pendingAction, setPendingAction] = useState(null);
 
@@ -372,10 +398,19 @@ export default function Inventory() {
     showToast({ message: `已导出 ${sortedRows.length} 条库存风险数据`, type: 'success' });
   };
   const openSkuDrawer = (row) => {
+    const scenario = resolveInventoryTaskScenario(row, {
+      quantity: row.adjustedQuantity,
+      fromWarehouse: row.transferFromWarehouse,
+      toWarehouse: row.transferToWarehouse,
+    });
     setSelectedSku(row);
-    setAdjustedQuantity(String(getReplenishmentQuantity(row)));
-    setAdjustReason('覆盖安全库存');
-    setAdjustNote('');
+    setAdjustedQuantity(String(row.adjustedQuantity ?? scenario.quantity ?? getReplenishmentQuantity(row)));
+    setAdjustReason(row.adjustReason || getDefaultAdjustReason(scenario.kind));
+    setAdjustNote(row.adjustNote || '');
+    setTransferFromWarehouse(row.transferFromWarehouse || scenario.fromWarehouse || '');
+    setTransferToWarehouse(row.transferToWarehouse || scenario.toWarehouse || '');
+    setAdjustmentOpen(false);
+    setEvidenceOpen(false);
   };
   const handleSkuRowKeyDown = (event, row) => {
     if (event.key !== 'Enter' && event.key !== ' ') return;
@@ -383,21 +418,66 @@ export default function Inventory() {
     openSkuDrawer(row);
   };
 
-  const taskBlockReason = selectedSku
+  const selectedDraft = {
+    quantity: adjustedQuantity,
+    fromWarehouse: transferFromWarehouse,
+    toWarehouse: transferToWarehouse,
+  };
+  const selectedScenario = selectedSku
+    ? resolveInventoryTaskScenario(selectedSku, selectedDraft)
+    : null;
+  const sourceTaskBlockReason = selectedSku
     ? getSourceTaskBlockReason(selectedSku, tasks, 'inventory')
     : '';
-  const inventoryTaskAlreadyCreated = taskBlockReason === '已存在进行中的关联任务';
+  const suggestionGateReason = selectedSku
+    ? getInventorySuggestionGateReason(selectedSku, selectedDraft)
+    : '';
+  const inventoryTaskAlreadyCreated = sourceTaskBlockReason === '已存在进行中的关联任务';
+  const taskBlockReason = inventoryTaskAlreadyCreated
+    ? sourceTaskBlockReason
+    : suggestionGateReason || sourceTaskBlockReason;
+  const directSuggestionAdopted = selectedSku
+    ? isDirectInventorySuggestionAdopted(selectedSku, selectedDraft)
+    : false;
+
+  const handleAdoptSuggestion = () => {
+    if (!selectedSku) return;
+    try {
+      const patch = buildDirectInventoryAdoptionPatch(selectedSku);
+      setAdjustedQuantity(String(patch.adjustedQuantity));
+      setTransferFromWarehouse(patch.transferFromWarehouse || '');
+      setTransferToWarehouse(patch.transferToWarehouse || '');
+      setAdjustReason(getDefaultAdjustReason(resolveInventoryTaskScenario(selectedSku).kind));
+      setAdjustNote('');
+      setAdjustmentOpen(false);
+      adoptInventorySuggestion(selectedSku.sku, patch);
+      showToast({ message: '已采纳 AI 建议，请分派负责人', type: 'success' });
+    } catch (error) {
+      showToast({ message: error.message, type: 'error' });
+    }
+  };
 
   const handleModifyPurchase = () => {
     if (!selectedSku) return;
-    if (Number(adjustedQuantity) <= 0) {
-      showToast({ message: '补货数量必须大于 0', type: 'error' });
-      return;
+    try {
+      const patch = buildAdjustedInventoryAdoptionPatch(selectedSku, {
+        quantity: adjustedQuantity,
+        fromWarehouse: transferFromWarehouse,
+        toWarehouse: transferToWarehouse,
+        reason: adjustReason,
+        note: adjustNote,
+      });
+      saveInventoryAdjustment(selectedSku.sku, patch);
+      setAdjustmentOpen(false);
+      const hasAssignedOwner = selectedSku.owner && selectedSku.owner !== '未分派';
+      showToast({
+        message: hasAssignedOwner ? '已保存调整方案' : '已保存调整方案，请分派负责人',
+        type: 'success',
+      });
+    } catch (error) {
+      showToast({ message: error.message, type: 'error' });
     }
-    adoptInventorySuggestion(selectedSku.sku, { adjustedQuantity: Number(adjustedQuantity) });
-    showToast({ message: '已保存修改采购数量，请分派负责人', type: 'success' });
   };
-  const handleRejectSuggestion = () => showToast({ message: '已驳回AI建议', type: 'info' });
   const handleAssignInventoryOwner = (owner) => {
     if (!selectedSku) return;
     try {
@@ -409,8 +489,8 @@ export default function Inventory() {
   };
   const handleCreateTask = () => {
     if (!selectedSku) return;
-    if (Number(adjustedQuantity) <= 0) {
-      showToast({ message: '补货数量必须大于 0', type: 'error' });
+    if (selectedScenario.validationError) {
+      showToast({ message: selectedScenario.validationError, type: 'error' });
       return;
     }
     if (taskBlockReason) {
@@ -424,7 +504,7 @@ export default function Inventory() {
         sortedRows.map((row) => row.sku),
         selectedSku.sku,
       );
-      const result = createInventoryTask(selectedSku, { quantity: adjustedQuantity });
+      const result = createInventoryTask(selectedSku, selectedDraft);
       if (!result.ok) {
         showToast({ message: result.error, type: 'info' });
         return;
@@ -438,14 +518,14 @@ export default function Inventory() {
 
       if (advance.isQueueComplete) {
         setSelectedSku(null);
-        showToast({ message: '补货任务已创建，当前队列已处理完成', type: 'success' });
+        showToast({ message: `${selectedScenario.createdMessage}，当前队列已处理完成`, type: 'success' });
         return;
       }
 
       const nextSku = sortedRows.find((row) => row.sku === advance.itemId);
       setCurrentPage(advance.page);
       openSkuDrawer(nextSku);
-      showToast({ message: '补货任务已创建', type: 'success' });
+      showToast({ message: selectedScenario.createdMessage, type: 'success' });
     };
     if (!stale && !highRisk) {
       execute();
@@ -453,8 +533,8 @@ export default function Inventory() {
     }
     const connection = platformConnections.find((item) => item.platform === selectedSku.platform);
     setPendingAction({
-      title: '确认创建补货任务',
-      description: `即将为 ${selectedSku.sku} 创建补货 ${adjustedQuantity} 件的协同任务。`,
+      title: selectedScenario.confirmationTitle,
+      description: selectedScenario.confirmationDescription,
       warnings: [
         ...(highRisk ? ['该 SKU 为高风险库存，请确认已核对补货公式和 AI 判断依据。'] : []),
         ...(stale ? [`${selectedSku.platform} 数据已停止同步，最后成功同步：${connection?.lastSuccessfulSync || '未知'}。`] : []),
@@ -709,18 +789,12 @@ export default function Inventory() {
         footer={
           <div className="flex h-full items-center gap-3">
             <button
+              aria-expanded={adjustmentOpen}
               className="h-10 flex-1 rounded-[8px] border border-[#2F7BFF] bg-white px-2 text-sm font-semibold text-[#2F7BFF]"
-              onClick={handleModifyPurchase}
+              onClick={() => setAdjustmentOpen((open) => !open)}
               type="button"
             >
-              修改采购
-            </button>
-            <button
-              className="h-10 flex-1 rounded-[8px] border border-[#D9E1EE] bg-white px-2 text-sm font-semibold text-[#5F6B7A]"
-              onClick={handleRejectSuggestion}
-              type="button"
-            >
-              驳回建议
+              {adjustmentOpen ? '收起调整' : '调整方案'}
             </button>
             <button
               className="h-10 flex-1 rounded-[8px] bg-[#2F7BFF] px-2 text-sm font-semibold text-white shadow-[0_8px_18px_rgba(47,123,255,0.22)] disabled:cursor-not-allowed disabled:bg-[#AFCBFF]"
@@ -729,7 +803,7 @@ export default function Inventory() {
               title={taskBlockReason}
               type="button"
             >
-              {inventoryTaskAlreadyCreated ? '任务已创建' : '创建补货任务'}
+              {inventoryTaskAlreadyCreated ? '任务已创建' : selectedScenario?.createButtonLabel || '创建任务'}
             </button>
           </div>
         }
@@ -739,14 +813,26 @@ export default function Inventory() {
             <DataFreshnessNotice connection={selectedConnection} />
             <SkuDetailDrawerContent
               selectedSku={selectedSku}
+              selectedScenario={selectedScenario}
               connection={selectedConnection}
               adjustedQuantity={adjustedQuantity}
               adjustReason={adjustReason}
               adjustNote={adjustNote}
+              directSuggestionAdopted={directSuggestionAdopted}
+              adjustmentOpen={adjustmentOpen}
+              evidenceOpen={evidenceOpen}
               setAdjustedQuantity={setAdjustedQuantity}
               setAdjustReason={setAdjustReason}
               setAdjustNote={setAdjustNote}
+              transferFromWarehouse={transferFromWarehouse}
+              transferToWarehouse={transferToWarehouse}
+              setTransferFromWarehouse={setTransferFromWarehouse}
+              setTransferToWarehouse={setTransferToWarehouse}
+              setEvidenceOpen={setEvidenceOpen}
+              warehouseOptions={warehouseOptions}
+              onAdoptSuggestion={handleAdoptSuggestion}
               onAssignOwner={handleAssignInventoryOwner}
+              onSaveAdjustment={handleModifyPurchase}
               tasks={tasks}
             />
           </div>
@@ -768,16 +854,76 @@ export default function Inventory() {
   );
 }
 
+function InventoryScenarioBasis({ planning, replenishment, scenario, selectedSku }) {
+  if (scenario.kind === 'clearance') {
+    return (
+      <section className="rounded-[14px] border border-[#E6EAF2] bg-white p-3">
+        <h3 className="text-sm font-semibold text-[#1D273B]">清库存判断依据</h3>
+        <div className="mt-3 space-y-2 text-xs leading-5 text-[#5F6B7A]">
+          <div className="flex justify-between gap-3"><span>当前库存 / 可售天数</span><span className="font-semibold text-[#1D273B]">{selectedSku.currentStock} 件 / {selectedSku.availableDays} 天</span></div>
+          <div className="flex justify-between gap-3"><span>日均销量 / 在途库存</span><span className="font-semibold text-[#1D273B]">{selectedSku.dailySales} 件 / {selectedSku.inTransitStock} 件</span></div>
+          <div className="rounded-[8px] bg-[#F5F7FB] px-3 py-2 text-[#344767]">
+            可售周期过长，建议停止补货，通过促销、组合销售或跨仓消化降低库存。
+          </div>
+        </div>
+      </section>
+    );
+  }
+
+  if (scenario.kind === 'transfer') {
+    return (
+      <section className="rounded-[14px] border border-[#E6EAF2] bg-white p-3">
+        <h3 className="text-sm font-semibold text-[#1D273B]">调拨计算口径</h3>
+        <div className="mt-3 space-y-2 text-xs leading-5 text-[#5F6B7A]">
+          <div className="flex justify-between gap-3"><span>建议路线</span><span className="font-semibold text-[#1D273B]">{scenario.fromWarehouse} 仓 → {scenario.toWarehouse} 仓</span></div>
+          <div className="flex justify-between gap-3"><span>建议调拨量</span><span className="font-semibold text-[#1D273B]">{scenario.quantity} 件</span></div>
+          <div className="rounded-[8px] bg-[#F5F7FB] px-3 py-2 text-[#344767]">
+            结合当前库存 {selectedSku.currentStock} 件、日均销量 {selectedSku.dailySales} 件与目标仓缺口生成调拨建议。
+          </div>
+        </div>
+      </section>
+    );
+  }
+
+  return (
+    <section className="rounded-[14px] border border-[#E6EAF2] bg-white p-3">
+      <h3 className="text-sm font-semibold text-[#1D273B]">库存计算口径</h3>
+      <div className="mt-3 space-y-2 text-xs leading-5 text-[#5F6B7A]">
+        <div className="flex justify-between gap-3"><span>有效在途 / 安全库存</span><span className="font-semibold text-[#1D273B]">{planning.effectiveTransitStock} / {planning.safetyStock} 件</span></div>
+        <div className="flex justify-between gap-3"><span>预测周期 / 箱规</span><span className="font-semibold text-[#1D273B]">{Number(planning.targetDays || 0).toFixed(1)} 天 / {planning.packSize} 件</span></div>
+        <div className="rounded-[8px] bg-[#F5F7FB] px-3 py-2 text-[#344767]">
+          可售天数 =（{selectedSku.currentStock} + {planning.effectiveTransitStock} - {planning.safetyStock}）÷ {selectedSku.dailySales} = <strong>{selectedSku.availableDays} 天</strong>
+        </div>
+        <div className="rounded-[8px] bg-[#F5F7FB] px-3 py-2 text-[#344767]">
+          补货量按目标周期缺口计算，并按 {planning.packSize} 件箱规向上取整 = <strong>{replenishment} 件</strong>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 function SkuDetailDrawerContent({
   selectedSku,
+  selectedScenario,
   connection,
   adjustedQuantity,
   adjustReason,
   adjustNote,
+  directSuggestionAdopted,
+  adjustmentOpen,
+  evidenceOpen,
   setAdjustedQuantity,
   setAdjustReason,
   setAdjustNote,
+  transferFromWarehouse,
+  transferToWarehouse,
+  setTransferFromWarehouse,
+  setTransferToWarehouse,
+  setEvidenceOpen,
+  warehouseOptions,
+  onAdoptSuggestion,
   onAssignOwner,
+  onSaveAdjustment,
   tasks,
 }) {
   const detail = selectedSku.detail ?? {};
@@ -785,6 +931,7 @@ function SkuDetailDrawerContent({
   const warehouse = detail.warehouseName ?? `${selectedSku.warehouse}仓`;
   const productImage = getSkuProductImage(selectedSku.sku, productName);
   const replenishment = getReplenishmentQuantity(selectedSku);
+  const suggestionScenario = resolveInventoryTaskScenario(selectedSku);
   const confidence = Math.round((selectedSku.confidence || 0.8) * 100);
   const planning = selectedSku.inventoryPlanning ?? {};
   const salesTrend = detail.salesTrend ?? skuSalesTrend;
@@ -797,9 +944,9 @@ function SkuDetailDrawerContent({
 
   return (
     <div className="space-y-3">
-      <section className="rounded-[14px] border border-[#E6EAF2] bg-white p-3">
+      <section data-testid="inventory-compact-overview" className="rounded-[14px] border border-[#E6EAF2] bg-white p-3">
         <div className="flex items-center gap-3">
-          <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-[12px] bg-gradient-to-br from-[#DCEAFF] via-[#F4F8FF] to-[#BFD6FF]">
+          <div className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-[10px] bg-gradient-to-br from-[#DCEAFF] via-[#F4F8FF] to-[#BFD6FF]">
             <img className="h-full w-full object-contain p-1.5" src={productImage} alt={productName} />
           </div>
           <div className="min-w-0 flex-1">
@@ -811,85 +958,102 @@ function SkuDetailDrawerContent({
           </div>
           <ChevronRight className="h-5 w-5 shrink-0 text-[#A0A8B8]" />
         </div>
+        <div className="mt-3 grid grid-cols-4 border-t border-[#EEF1F6] pt-3">
+          {metrics.map((metric) => (
+            <div key={metric.label} className="min-w-0 border-r border-[#EEF1F6] px-2 first:pl-0 last:border-r-0 last:pr-0">
+              <div className="whitespace-nowrap text-[11px] text-[#7889A8]">{metric.label}</div>
+              <div className={`mt-1 truncate text-sm font-semibold ${metric.tone}`}>{metric.value}</div>
+            </div>
+          ))}
+        </div>
       </section>
 
-      <section className="grid grid-cols-2 gap-2">
-        {metrics.map((metric) => (
-          <div key={metric.label} className="rounded-[12px] border border-[#E6EAF2] bg-white px-3 py-3">
-            <div className="text-xs text-[#7889A8]">{metric.label}</div>
-            <div className={`mt-1 text-xl font-semibold ${metric.tone}`}>{metric.value}</div>
+      <section data-testid="inventory-ai-action" className="rounded-[14px] border border-[#E6EAF2] bg-white p-3">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 text-sm font-semibold text-[#1D273B]">
+              <Boxes className="h-4 w-4 shrink-0 text-[#2F7BFF]" />
+              <span className="truncate">
+                {suggestionScenario.suggestionTitle}
+                {suggestionScenario.kind === 'replenishment' ? `：${replenishment}件` : null}
+                {suggestionScenario.kind === 'transfer' ? `：${suggestionScenario.quantity}件` : null}
+              </span>
+            </div>
+            <p className="mt-2 text-xs leading-5 text-[#344767]">{detail.suggestionReason ?? selectedSku.aiSuggestion}</p>
           </div>
-        ))}
+          <button
+            aria-pressed={directSuggestionAdopted}
+            className={directSuggestionAdopted
+              ? 'inline-flex h-8 shrink-0 items-center gap-1 rounded-[8px] bg-[#ECFDF3] px-3 text-xs font-semibold text-[#12B76A]'
+              : 'inline-flex h-8 shrink-0 items-center rounded-[8px] bg-[#EAF2FF] px-3 text-xs font-semibold text-[#2F7BFF] hover:bg-[#DCE9FF]'}
+            disabled={directSuggestionAdopted}
+            onClick={onAdoptSuggestion}
+            type="button"
+          >
+            {directSuggestionAdopted ? <><Check className="h-3.5 w-3.5" />已采纳</> : '采纳'}
+          </button>
+        </div>
+        <div className="mt-2 flex items-center gap-5 text-xs text-[#7889A8]">
+          <span>置信度 <strong className="text-[#1D273B]">{confidence}%</strong></span>
+          <span>处理状态 <strong className="text-[#1D273B]">{selectedSku.status ?? detail.processStatus ?? '待处理'}</strong></span>
+        </div>
+        <label className="mt-3 block border-t border-[#EEF1F6] pt-3">
+          <span className="text-xs text-[#7889A8]">负责人</span>
+          <AssigneeWorkloadSelect
+            ariaLabel="分派库存负责人"
+            className="mt-1"
+            disabled={selectedSku.status !== '待分派'}
+            members={taskTeamMembers}
+            onChange={onAssignOwner}
+            source={selectedSku}
+            tasks={tasks}
+            triggerClassName="h-9 w-full rounded-[8px] px-3 text-sm"
+            value={selectedSku.owner}
+          />
+        </label>
       </section>
 
+      {adjustmentOpen ? (
       <section className="rounded-[14px] border border-[#E6EAF2] bg-white p-3">
-        <div className="flex items-center gap-2 text-sm font-semibold text-[#1D273B]">
-          <Boxes className="h-4 w-4 text-[#2F7BFF]" />
-          AI补货建议：{replenishment}件
-        </div>
-        <p className="mt-2 text-xs leading-5 text-[#344767]">建议理由：{detail.suggestionReason ?? selectedSku.aiSuggestion}</p>
-        <div className="mt-3 flex items-center justify-between text-xs">
-          <span className="text-[#7889A8]">置信度</span>
-          <span className="font-semibold text-[#1D273B]">{confidence}%</span>
-        </div>
-        <div className="mt-2 flex items-center justify-between text-xs">
-          <span className="text-[#7889A8]">处理状态</span>
-          <span className="font-semibold text-[#1D273B]">{selectedSku.status ?? detail.processStatus ?? '待处理'}</span>
-        </div>
-        <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-[#E6EAF2]">
-          <div className="h-full rounded-full bg-[#2F7BFF]" style={{ width: `${confidence}%` }} />
-        </div>
-      </section>
-
-      <AiEvidencePanel evidence={selectedSku.aiEvidence} connection={connection} />
-
-      <section className="rounded-[14px] border border-[#E6EAF2] bg-white p-3">
-        <h3 className="text-sm font-semibold text-[#1D273B]">库存计算口径</h3>
-        <div className="mt-3 space-y-2 text-xs leading-5 text-[#5F6B7A]">
-          <div className="flex justify-between gap-3"><span>有效在途 / 安全库存</span><span className="font-semibold text-[#1D273B]">{planning.effectiveTransitStock} / {planning.safetyStock} 件</span></div>
-          <div className="flex justify-between gap-3"><span>预测周期 / 箱规</span><span className="font-semibold text-[#1D273B]">{Number(planning.targetDays || 0).toFixed(1)} 天 / {planning.packSize} 件</span></div>
-          <div className="rounded-[8px] bg-[#F5F7FB] px-3 py-2 text-[#344767]">
-            可售天数 =（{selectedSku.currentStock} + {planning.effectiveTransitStock} - {planning.safetyStock}）÷ {selectedSku.dailySales} = <strong>{selectedSku.availableDays} 天</strong>
-          </div>
-          <div className="rounded-[8px] bg-[#F5F7FB] px-3 py-2 text-[#344767]">
-            补货量按目标周期缺口计算，并按 {planning.packSize} 件箱规向上取整 = <strong>{replenishment} 件</strong>
-          </div>
-        </div>
-      </section>
-
-      <section className="rounded-[14px] border border-[#E6EAF2] bg-white p-3">
-        <h3 className="text-sm font-semibold text-[#1D273B]">销售趋势（日均）</h3>
-        <div className="mt-2" style={{ height: 132 }}>
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={salesTrend} margin={{ top: 8, right: 8, left: -24, bottom: 0 }}>
-              <CartesianGrid stroke="#E8EDF5" vertical={false} />
-              <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: '#7889A8' }} />
-              <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: '#7889A8' }} />
-              <Tooltip />
-              <Line type="monotone" dataKey="sales" stroke="#2F7BFF" strokeWidth={2.5} dot={{ r: 3, fill: '#fff', stroke: '#2F7BFF', strokeWidth: 2 }} />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
-      </section>
-
-      <section className="rounded-[14px] border border-[#E6EAF2] bg-white p-3">
-        <h3 className="text-sm font-semibold text-[#1D273B]">人工调整</h3>
+        <h3 className="text-sm font-semibold text-[#1D273B]">调整方案</h3>
         <div className="mt-3 space-y-3">
-          <label className="block">
-            <span className="text-xs text-[#7889A8]">AI建议数量</span>
-            <div className="mt-1 h-9 rounded-[8px] bg-[#F5F7FB] px-3 py-2 text-sm font-semibold text-[#1D273B]">{replenishment}件</div>
-          </label>
-          <label className="block">
-            <span className="text-xs text-[#7889A8]">修改后数量</span>
-            <input
-              className="mt-1 h-9 w-full rounded-[8px] border border-[#D9E1EE] px-3 text-sm font-semibold text-[#1D273B] outline-none focus:border-[#2F7BFF]"
-              inputMode="numeric"
-              min="0"
-              type="number"
-              value={adjustedQuantity}
-              onChange={(event) => setAdjustedQuantity(event.target.value)}
-            />
-          </label>
+          {selectedScenario.kind !== 'clearance' ? (
+            <label className="block">
+              <span className="text-xs text-[#7889A8]">{selectedScenario.kind === 'transfer' ? '调拨数量' : '修改后数量'}</span>
+              <input
+                className="mt-1 h-9 w-full rounded-[8px] border border-[#D9E1EE] px-3 text-sm font-semibold text-[#1D273B] outline-none focus:border-[#2F7BFF]"
+                inputMode="numeric"
+                min="0"
+                type="number"
+                value={adjustedQuantity}
+                onChange={(event) => setAdjustedQuantity(event.target.value)}
+              />
+            </label>
+          ) : null}
+          {selectedScenario.kind === 'transfer' ? (
+            <div className="grid grid-cols-2 gap-3">
+              <label className="block">
+                <span className="text-xs text-[#7889A8]">调出仓</span>
+                <select
+                  className="mt-1 h-9 w-full rounded-[8px] border border-[#D9E1EE] bg-white px-3 text-sm text-[#1D273B] outline-none focus:border-[#2F7BFF]"
+                  value={transferFromWarehouse}
+                  onChange={(event) => setTransferFromWarehouse(event.target.value)}
+                >
+                  {warehouseOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                </select>
+              </label>
+              <label className="block">
+                <span className="text-xs text-[#7889A8]">调入仓</span>
+                <select
+                  className="mt-1 h-9 w-full rounded-[8px] border border-[#D9E1EE] bg-white px-3 text-sm text-[#1D273B] outline-none focus:border-[#2F7BFF]"
+                  value={transferToWarehouse}
+                  onChange={(event) => setTransferToWarehouse(event.target.value)}
+                >
+                  {warehouseOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                </select>
+              </label>
+            </div>
+          ) : null}
           <label className="block">
             <span className="text-xs text-[#7889A8]">修改原因</span>
             <select
@@ -897,25 +1061,10 @@ function SkuDetailDrawerContent({
               value={adjustReason}
               onChange={(event) => setAdjustReason(event.target.value)}
             >
-              <option>覆盖安全库存</option>
-              <option>预算限制</option>
-              <option>供应商交期变化</option>
-              <option>人工复核调整</option>
+              {getAdjustReasonOptions(selectedScenario.kind).map((reason) => (
+                <option key={reason}>{reason}</option>
+              ))}
             </select>
-          </label>
-          <label className="block">
-            <span className="text-xs text-[#7889A8]">负责人</span>
-            <AssigneeWorkloadSelect
-              ariaLabel="分派库存负责人"
-              className="mt-1"
-              disabled={selectedSku.status === '待处理'}
-              members={taskTeamMembers}
-              onChange={onAssignOwner}
-              source={selectedSku}
-              tasks={tasks}
-              triggerClassName="h-9 w-full rounded-[8px] px-3 text-sm"
-              value={selectedSku.owner}
-            />
           </label>
           <label className="block">
             <span className="text-xs text-[#7889A8]">备注</span>
@@ -926,6 +1075,56 @@ function SkuDetailDrawerContent({
               onChange={(event) => setAdjustNote(event.target.value)}
             />
           </label>
+          <button
+            className="h-9 w-full rounded-[8px] bg-[#2F7BFF] text-sm font-semibold text-white shadow-[0_6px_14px_rgba(47,123,255,0.2)]"
+            onClick={onSaveAdjustment}
+            type="button"
+          >
+            保存调整方案
+          </button>
+        </div>
+      </section>
+      ) : null}
+
+      <section data-testid="inventory-evidence-disclosure" className="rounded-[14px] border border-[#E6EAF2] bg-white p-3">
+        <button
+          aria-expanded={evidenceOpen}
+          className="flex w-full items-center justify-between gap-3 text-left"
+          onClick={() => setEvidenceOpen((open) => !open)}
+          type="button"
+        >
+          <span className="min-w-0">
+            <strong className="block text-sm font-semibold text-[#1D273B]">建议依据</strong>
+            <span className="mt-1 block truncate text-xs text-[#7889A8]">AI判断、计算口径与执行风险</span>
+          </span>
+          <ChevronDown className={`h-4 w-4 shrink-0 text-[#7889A8] transition-transform ${evidenceOpen ? 'rotate-180' : ''}`} />
+        </button>
+      </section>
+
+      {evidenceOpen ? (
+        <>
+          <AiEvidencePanel evidence={selectedSku.aiEvidence} connection={connection} />
+          <InventoryScenarioBasis
+            planning={planning}
+            replenishment={replenishment}
+            scenario={suggestionScenario}
+            selectedSku={selectedSku}
+          />
+        </>
+      ) : null}
+
+      <section className="rounded-[14px] border border-[#E6EAF2] bg-white p-3">
+        <h3 className="text-sm font-semibold text-[#1D273B]">销售趋势（日均）</h3>
+        <div className="mt-2" style={{ height: 88 }}>
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart data={salesTrend} margin={{ top: 4, right: 8, left: -24, bottom: 0 }}>
+              <CartesianGrid stroke="#E8EDF5" vertical={false} />
+              <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#7889A8' }} />
+              <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#7889A8' }} />
+              <Tooltip />
+              <Line type="monotone" dataKey="sales" stroke="#2F7BFF" strokeWidth={2.5} dot={false} />
+            </LineChart>
+          </ResponsiveContainer>
         </div>
       </section>
     </div>

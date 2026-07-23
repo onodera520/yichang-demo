@@ -5,6 +5,7 @@ import {
   hasAssignedTaskOwner,
   UNASSIGNED_TASK_OWNER,
 } from './taskAssignment.js';
+import { resolveInventoryTaskScenario } from '../pages/inventory/inventoryTaskScenario.js';
 
 const nowLabel = '刚刚';
 
@@ -79,29 +80,39 @@ export function buildOrderTask(order) {
 }
 
 export function buildInventoryTask(sku, options = {}) {
-  const quantity = Number(options.quantity ?? sku.suggestedReplenishment ?? 120);
   const owner = requireAssignedOwner(options.owner || sku.owner || UNASSIGNED_TASK_OWNER);
+  const scenario = resolveInventoryTaskScenario(sku, options);
+  if (scenario.validationError) throw new Error(scenario.validationError);
 
   return {
     id: `task-inventory-${sku.sku}-${Date.now()}`,
-    title: `补货 ${quantity} 件至 ${sku.warehouse} 仓`,
+    title: scenario.title,
     source: sku.sku,
     sourceId: sku.sku,
     sourceKind: 'inventory',
     sourceType: '库存风险',
     riskLevel: sku.riskLevel,
+    taskKind: scenario.kind,
+    sourceStatus: scenario.sourceStatus,
+    quantity: scenario.quantity,
+    ...(scenario.kind === 'transfer'
+      ? {
+          transferFromWarehouse: scenario.fromWarehouse,
+          transferToWarehouse: scenario.toWarehouse,
+        }
+      : {}),
     owner,
     status: getTaskInitialStatus(owner),
     remainingSLA: '04:00:00',
     deadline: '今天 18:00',
     createdAt: nowLabel,
-    description: sku.aiSuggestion || `${sku.productName} 需要创建补货任务。`,
-    impact: `建议补货 ${quantity} 件，置信度 ${Math.round((sku.confidence || 0.8) * 100)}%`,
+    description: scenario.description,
+    impact: scenario.impact,
     processLogs: [
       {
         time: nowLabel,
         owner: 'AI',
-        action: '创建补货任务',
+        action: scenario.logAction,
         detail: `来自库存风险 ${sku.sku}`,
         tone: 'blue',
       },

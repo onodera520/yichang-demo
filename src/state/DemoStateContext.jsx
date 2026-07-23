@@ -20,6 +20,7 @@ import {
   adoptSourceSuggestion,
   assignSourceOwner,
   getSourceTaskBlockReason,
+  saveSourceAdjustment,
 } from './sourceTaskWorkflow.js';
 import { normalizeOrderAssignmentState } from './orderAssignment.js';
 
@@ -73,6 +74,12 @@ export function DemoStateProvider({ children }) {
     )));
   };
 
+  const saveInventoryAdjustment = (sku, patch = {}) => {
+    setInventory((current) => current.map((item) => (
+      item.sku === sku ? saveSourceAdjustment(item, patch) : item
+    )));
+  };
+
   const assignOrderOwner = (orderId, owner) => {
     setOrders((current) => current.map((order) => (
       order.id === orderId
@@ -123,7 +130,9 @@ export function DemoStateProvider({ children }) {
     if (error) return { ok: false, error };
     const task = buildInventoryTask(currentSku, options);
     setTaskState((current) => commitTaskRows(current, [task, ...current.rows]));
-    setInventory((current) => current.map((item) => (item.sku === sku.sku ? { ...item, status: '待补货' } : item)));
+    setInventory((current) => current.map((item) => (
+      item.sku === sku.sku ? { ...item, status: task.sourceStatus } : item
+    )));
     return { ok: true, task };
   };
 
@@ -237,6 +246,7 @@ export function DemoStateProvider({ children }) {
       updateOrderStatus,
       adoptOrderSuggestion,
       adoptInventorySuggestion,
+      saveInventoryAdjustment,
       assignOrderOwner,
       assignInventoryOwner,
       applyOrderTransaction,

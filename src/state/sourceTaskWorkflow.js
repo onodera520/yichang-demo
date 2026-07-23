@@ -13,6 +13,10 @@ export function adoptSourceSuggestion(source, patch = {}) {
   return { ...source, ...patch, status: '待分派', owner: UNASSIGNED_OWNER };
 }
 
+export function saveSourceAdjustment(source, patch = {}) {
+  return { ...source, ...patch, status: '待分派' };
+}
+
 export function assignSourceOwner(source, owner) {
   if (source?.status !== '待分派') throw new Error('请先采纳或保存 AI 建议');
   if (!isAssignedOwner(owner)) throw new Error('请选择负责人');

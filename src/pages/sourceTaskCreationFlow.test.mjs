@@ -29,6 +29,7 @@ test('failed task creation returns before either source queue advances', () => {
 });
 
 test('inventory duplicate-task gate explains that the task has already been created', () => {
-  assert.match(inventorySource, /const inventoryTaskAlreadyCreated = taskBlockReason === '已存在进行中的关联任务'/);
-  assert.match(inventorySource, /inventoryTaskAlreadyCreated \? '任务已创建' : '创建补货任务'/);
+  assert.match(inventorySource, /const inventoryTaskAlreadyCreated = sourceTaskBlockReason === '已存在进行中的关联任务'/);
+  assert.match(inventorySource, /inventoryTaskAlreadyCreated\s*\? sourceTaskBlockReason\s*:\s*suggestionGateReason \|\| sourceTaskBlockReason/);
+  assert.match(inventorySource, /inventoryTaskAlreadyCreated \? '任务已创建' : selectedScenario\?\.createButtonLabel \|\| '创建任务'/);
 });

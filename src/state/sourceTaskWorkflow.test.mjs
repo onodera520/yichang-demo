@@ -6,6 +6,7 @@ import {
   assignSourceOwner,
   getSourceTaskBlockReason,
   isAssignedOwner,
+  saveSourceAdjustment,
 } from './sourceTaskWorkflow.js';
 
 const adoptedOrder = {
@@ -67,6 +68,34 @@ test('采纳建议后来源进入待分派且仍保持未分派', () => {
   assert.deepEqual(
     adoptSourceSuggestion({ sku: 'SKU-2', status: '待处理', owner: '未分派' }, { adjustedQuantity: 320 }),
     { sku: 'SKU-2', status: '待分派', owner: '未分派', adjustedQuantity: 320 },
+  );
+});
+
+test('保存库存调整只更新方案并保留已分派负责人', () => {
+  assert.deepEqual(
+    saveSourceAdjustment(
+      {
+        sku: 'ELE-KYB-01',
+        status: '待分派',
+        owner: '李娜',
+        detail: { owner: '李娜' },
+        adjustedQuantity: 200,
+      },
+      {
+        adjustedQuantity: 240,
+        suggestionDecision: 'modified',
+        adjustReason: '覆盖安全库存',
+      },
+    ),
+    {
+      sku: 'ELE-KYB-01',
+      status: '待分派',
+      owner: '李娜',
+      detail: { owner: '李娜' },
+      adjustedQuantity: 240,
+      suggestionDecision: 'modified',
+      adjustReason: '覆盖安全库存',
+    },
   );
 });
 

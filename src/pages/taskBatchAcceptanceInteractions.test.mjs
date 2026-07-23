@@ -6,9 +6,8 @@ const tasksSource = await readFile(new URL('./Tasks.jsx', import.meta.url), 'utf
 const stateSource = await readFile(new URL('../state/DemoStateContext.jsx', import.meta.url), 'utf8');
 
 test('待验收工具栏使用批量验收替换不适用的批量操作', () => {
-  assert.match(tasksSource, /batchAcceptanceMode \? \(/);
   assert.match(tasksSource, /批量验收通过/);
-  assert.match(tasksSource, /batchAcceptanceMode=\{activeTab === '待验收'\}/);
+  assert.match(tasksSource, /batchActions=\{getTaskBatchToolbarActions\(activeTab\)\}/);
   assert.match(tasksSource, /onBulkAccept=\{openBatchAcceptance\}/);
 });
 

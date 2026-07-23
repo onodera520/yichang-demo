@@ -42,7 +42,28 @@ assert.equal(inventoryTask.sourceKind, 'inventory');
 assert.equal(inventoryTask.source, 'ELE-HEAD-01');
 assert.equal(inventoryTask.owner, '赵宁');
 assert.equal(inventoryTask.status, '已分派');
-assert.equal(buildInventoryTask({ ...sku, suggestedReplenishment: 0 }, { quantity: 0 }).impact.includes('补货 0 件'), true);
+const clearanceTask = buildInventoryTask({
+  ...sku,
+  sku: 'HOM-HUM-01',
+  riskLevel: '滞销',
+  suggestedReplenishment: 0,
+}, { quantity: 0 });
+assert.equal(clearanceTask.taskKind, 'clearance');
+assert.equal(clearanceTask.sourceStatus, '待清库存');
+assert.equal(clearanceTask.title, '清理 HOM-HUM-01 滞销库存');
+assert.equal(clearanceTask.processLogs[0].action, '创建清库存任务');
+
+const transferTask = buildInventoryTask({
+  ...sku,
+  sku: 'ACC-PHONE-02',
+  riskLevel: '调拨',
+  warehouse: 'UK',
+  currentStock: 72,
+}, { quantity: 40, fromWarehouse: 'UK', toWarehouse: 'LA' });
+assert.equal(transferTask.taskKind, 'transfer');
+assert.equal(transferTask.sourceStatus, '待调拨');
+assert.equal(transferTask.title, '从 UK 仓调拨 40 件至 LA 仓');
+assert.equal(transferTask.processLogs[0].action, '创建调拨任务');
 
 const completionEvidence = {
   result: '已从 NJ 仓重新分配库存',

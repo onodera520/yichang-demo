@@ -70,11 +70,13 @@ import {
   getBatchAcceptanceSummary,
   reconcileBatchAcceptanceSelection,
 } from './tasks/taskBatchAcceptance.js';
+import { getTaskBatchToolbarActions } from './tasks/taskBatchToolbar.js';
+import { matchesTaskRiskFilter, TASK_RISK_FILTERS } from './tasks/taskRiskFilters.js';
 
 const tabs = ['全部待办', '已分派', '处理中', '待验收', '已超时', '已升级', '已完成'];
 const owners = ['王敏', '赵宁', '陈浩', '刘畅', '周扬', '张磊', '李娜'];
 const sources = ['全部', '来源订单', '库存风险', '物流异常', '平台同步', '售后异常'];
-const risks = ['全部', '高', '中', '低'];
+const risks = TASK_RISK_FILTERS;
 const deadlines = ['全部', '今天', '2小时内', '已超时', '24小时内'];
 const TASK_PAGE_SIZE = 9;
 const TASK_TABLE_COLUMN_WIDTHS = ['5%', '10%', '21%', '20%', '11%', '11%', '11%', '11%'];
@@ -237,7 +239,7 @@ function TaskTable({
   onBulkUpgrade,
   onBulkRemind,
   onBulkAccept,
-  batchAcceptanceMode,
+  batchActions,
   onExport,
   onSort,
   onRefresh,
@@ -252,15 +254,10 @@ function TaskTable({
           <span className="pb-0.5 text-sm text-[#7889A8]">共 {totalCount} 条</span>
         </div>
         <div className="flex min-w-0 items-center justify-end gap-1.5">
-          {batchAcceptanceMode ? (
-            <TableButton onClick={onBulkAccept}>批量验收通过</TableButton>
-          ) : (
-            <>
-              <TableButton onClick={onBulkTransfer}>批量转交</TableButton>
-              <TableButton onClick={onBulkRemind}>批量催办</TableButton>
-              <TableButton onClick={onBulkUpgrade}>批量升级</TableButton>
-            </>
-          )}
+          {batchActions.includes('accept') && <TableButton onClick={onBulkAccept}>批量验收通过</TableButton>}
+          {batchActions.includes('transfer') && <TableButton onClick={onBulkTransfer}>批量转交</TableButton>}
+          {batchActions.includes('remind') && <TableButton onClick={onBulkRemind}>批量催办</TableButton>}
+          {batchActions.includes('upgrade') && <TableButton onClick={onBulkUpgrade}>批量升级</TableButton>}
           <TableButton icon={Download} onClick={onExport}>导出</TableButton>
           <TableButton aria-pressed={Boolean(sortDirection)} className="w-[126px]" onClick={onSort}>
             {sortDirection === 'asc' ? '截止时间升序' : sortDirection === 'desc' ? '截止时间降序' : '按截止时间排序'}
@@ -721,7 +718,7 @@ export default function Tasks() {
       return tabMatch
         && (filters.owner === '全部' || task.owner === filters.owner)
         && (filters.source === '全部' || task.sourceType === filters.source)
-        && (filters.risk === '全部' || task.riskLevel === filters.risk)
+        && matchesTaskRiskFilter(task, filters.risk)
         && matchesLiveDeadlineFilter(
           task,
           filters.deadline,
@@ -1251,7 +1248,7 @@ export default function Tasks() {
             onBulkRemind={remindSelectedTasks}
             onBulkUpgrade={() => openBulkConfirm('upgrade')}
             onBulkAccept={openBatchAcceptance}
-            batchAcceptanceMode={activeTab === '待验收'}
+            batchActions={getTaskBatchToolbarActions(activeTab)}
             onExport={exportTasks}
             onSort={toggleDeadlineSort}
             onRefresh={refreshTasks}
